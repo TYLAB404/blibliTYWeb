@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+app:
+  # 下载文件保存根目录
+  download-dir: ./downloads
+  # ffmpeg 可执行文件路径；留空则自动在 PATH 中查找
+  ffmpeg-path: ./tools/ffmpeg.exe
+  # B 站 Cookie（可选，用于下载大会员/登录画质）
+  bilibili-cookie: ""
+
+spring:
+  jackson:
+    time-zone: GMT+8
+
+logging:
+  level:
+    com.tylab.biliweb: INFO
