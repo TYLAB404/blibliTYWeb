@@ -18,14 +18,29 @@
 
 访问 https://dash.cloudflare.com/sign-up 注册（邮箱 + 密码）。
 
-## 步骤 2：买域名（推荐直接在 Cloudflare 买）
+## 步骤 2：买域名
 
+**推荐在 Cloudflare 直接买**（自动托管，省事）：
 1. 登录 Cloudflare 后，左侧菜单 **Domain Registration → Register Domain**
 2. 搜索一个便宜的域名（`.xyz` / `.top` / `.online` 等首年约 10~30 元）
-3. 直接购买——**在 Cloudflare 买的域名自动就是 Cloudflare 托管**，省去"转移域名"这一步
+3. 直接购买——**在 Cloudflare 买的域名自动就是 Cloudflare 托管**，跳过下面的"接入"步骤
 4. 支持支付宝/银行卡付款
 
-> 也可以去 Namecheap / 阿里云买更便宜的，但买完需要把域名接入 Cloudflare（DNS 托管转移，多一步）。在 Cloudflare 直接买最省事。
+**如果在 Namecheap 等第三方注册商买了**（如本例 `tylab.shop`，Namecheap 买的）：
+- 买完后注册商页面会推销附加产品（邮箱/主机/EasyWP 等）——**全部跳过，不要点试用**，避免后续扣费
+- 需要把域名**接入 Cloudflare**（改 nameserver），见下方"域名接入 Cloudflare"
+
+### 域名接入 Cloudflare（第三方注册商买的域名必做）
+
+1. 打开 https://dash.cloudflare.com → **Add a site**（添加站点）
+2. 输入你的域名（如 `tylab.shop`），选 **Free** 免费计划
+3. Cloudflare 会自动扫描 DNS 记录；没有特殊记录的话，扫描结果直接 **Continue**
+4. 关键一步：Cloudflare 会给你**两个 nameserver**（形如 `aaa.ns.cloudflare.com` / `bbb.ns.cloudflare.com`），**复制它们**
+5. 回到 Namecheap 控制台 → 你的域名 → **Domain List → Manage** → **Nameservers**（或 Domain → DNS → Nameservers）
+6. 把默认 nameserver 改成 Cloudflare 给的那两个，保存
+7. 等待生效（通常 5 分钟~几小时；Cloudflare 面板显示 "Active" 即成功）
+
+> 生效前域名解析不会走 Cloudflare，Tunnel 也连不上；请等 Cloudflare 显示 Active 再进行下一步。
 
 ## 步骤 3：创建 Tunnel（网页操作，约 2 分钟）
 

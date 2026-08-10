@@ -1,5 +1,7 @@
 server:
   port: 8080
+  # 监听所有网卡（IPv4+IPv6）。注意：不能设为 127.0.0.1，否则 cloudflared 走 IPv4 会 502
+  address: 0.0.0.0
 
 app:
   # 下载文件保存根目录
