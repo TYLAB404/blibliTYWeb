@@ -31,9 +31,9 @@ public class ParseController {
         if (input == null || input.trim().isEmpty()) {
             throw new IllegalArgumentException("请输入视频链接");
         }
-        BiliApiClient.LinkResult link = BiliApiClient.parseLink(input);
+        BiliApiClient.LinkResult link = apiClient.resolveLink(input);
         if (link == null) {
-            throw new IllegalArgumentException("无法识别链接中的视频编号（支持 BV/av 号及完整链接）");
+            throw new IllegalArgumentException("无法识别链接中的视频编号（支持 BV/av 号、完整链接、b23.tv 短链）");
         }
         if (link.aid != null) {
             return apiClient.getVideoInfoByAid(link.aid);

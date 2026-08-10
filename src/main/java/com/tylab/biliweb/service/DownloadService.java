@@ -39,6 +39,10 @@ public class DownloadService {
 
     private static final Logger log = LoggerFactory.getLogger(DownloadService.class);
     private static final int BUFFER_SIZE = 64 * 1024;
+    /** 任务级网络错误自动重试次数 */
+    private static final int TASK_AUTO_RETRY_MAX = 2;
+    /** 每次重试前等待秒数 */
+    private static final int TASK_AUTO_RETRY_DELAY = 5;
 
     private final BiliApiClient apiClient;
     private final FfmpegUtil ffmpegUtil;
@@ -71,12 +75,37 @@ public class DownloadService {
     /** 创建并启动一个下载任务 */
     public DownloadTask createTask(String bvid, long cid, int quality,
                                    String videoTitle, String pageTitle, String pagePart) {
+        return createTask(bvid, cid, quality, videoTitle, pageTitle, pagePart, false);
+    }
+
+    /** 创建并启动一个下载任务（audioOnly=true 时仅下载音频转 mp3） */
+    public DownloadTask createTask(String bvid, long cid, int quality,
+                                   String videoTitle, String pageTitle, String pagePart, boolean audioOnly) {
+        // 任务去重：相同 bvid+cid+模式 且 处于活跃状态的任务不重复添加
+        DownloadTask dup = findActiveTask(bvid, cid, audioOnly);
+        if (dup != null) {
+            throw new IllegalArgumentException("该内容已在下载列表中（" + dup.getPagePart() + "），无需重复添加");
+        }
         String id = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-        DownloadTask task = new DownloadTask(id, bvid, cid, quality, videoTitle, pageTitle, pagePart);
+        DownloadTask task = new DownloadTask(id, bvid, cid, quality, videoTitle, pageTitle, pagePart, audioOnly);
         task.setAction(() -> execute(task));
         tasks.put(id, task);
         executor.submit(task);
         return task;
+    }
+
+    /** 查找相同 bvid+cid+模式 的活跃任务（进行中/排队/合并），用于去重 */
+    private DownloadTask findActiveTask(String bvid, long cid, boolean audioOnly) {
+        for (DownloadTask t : tasks.values()) {
+            if (t.getBvid().equals(bvid) && t.getCid() == cid
+                    && t.isAudioOnly() == audioOnly
+                    && t.getStatus() != TaskStatus.COMPLETED
+                    && t.getStatus() != TaskStatus.FAILED
+                    && t.getStatus() != TaskStatus.CANCELLED) {
+                return t;
+            }
+        }
+        return null;
     }
 
     public DownloadTask getTask(String id) {
@@ -94,66 +123,139 @@ public class DownloadService {
         return true;
     }
 
-    /** 任务主流程 */
+    /** 任务主流程（含网络错误自动重试） */
     private void execute(DownloadTask task) {
-        File dir = prepareDir(task);
-        File videoFile = null;
-        File audioFile = null;
-        try {
-            task.setStatus(TaskStatus.DOWNLOADING);
+        int attempts = 0;
+        while (true) {
+            File dir = prepareDir(task);
+            File videoFile = null;
+            File audioFile = null;
+            try {
+                task.setStatus(TaskStatus.DOWNLOADING);
 
-            // 1. 获取播放流
-            PlayUrlResult play = apiClient.getPlayUrl(task.getBvid(), task.getCid(), task.getQuality());
-            StreamInfo video = pickVideoStream(play, task);
-            StreamInfo audio = pickAudioStream(play);
-            if (video == null || audio == null) {
-                throw new RuntimeException("无法获取音视频流（可能需要登录或大会员 Cookie）");
+                // 1. 获取播放流
+                PlayUrlResult play = apiClient.getPlayUrl(task.getBvid(), task.getCid(), task.getQuality());
+                StreamInfo video = pickVideoStream(play, task);
+                StreamInfo audio = pickAudioStream(play);
+
+                String base = new File(dir, task.getPagePart() + "_" + sanitize(task.getPageTitle())).getAbsolutePath();
+                AtomicLong done = new AtomicLong(0);
+
+                // 2. 仅音频模式：只下载音频流，转 mp3
+                if (task.isAudioOnly()) {
+                    if (audio == null) {
+                        throw new RuntimeException("无法获取音频流（可能需要登录或大会员 Cookie）");
+                    }
+                    task.setActualQuality(audio.getId());
+                    audioFile = new File(base + "_a.m4s");
+                    task.setTotalBytes(Math.max(1, probeSingleSize(audio)));
+                    downloadStream(audioFile, urlList(audio), task, "下载音频流", done);
+
+                    task.setStatus(TaskStatus.MERGING);
+                    task.setStage("ffmpeg 转码 MP3");
+                    task.setProgress(100);
+                    File output = ffmpegUtil.transcodeToMp3(audioFile.getAbsolutePath(), base + ".mp3");
+
+                    if (audioFile.exists()) audioFile.delete();
+                    task.setOutputFile(output.getAbsolutePath());
+                    task.setOutputSize(formatSize(output.length()));
+                    task.setStatus(TaskStatus.COMPLETED);
+                    task.setFinishedAt(System.currentTimeMillis());
+                    log.info("任务 {} 完成: {}", task.getId(), output.getAbsolutePath());
+                    return;
+                }
+
+                // 3. 视频模式：下载视频流 + 音频流，再合并
+                if (video == null || audio == null) {
+                    throw new RuntimeException("无法获取音视频流（可能需要登录或大会员 Cookie）");
+                }
+                task.setActualQuality(video.getId());
+                videoFile = new File(base + "_v.m4s");
+                audioFile = new File(base + "_a.m4s");
+
+                task.setTotalBytes(Math.max(1, probeTotal(play)));
+                downloadStream(videoFile, urlList(video), task, "下载视频流", done);
+                downloadStream(audioFile, urlList(audio), task, "下载音频流", done);
+
+                task.setStatus(TaskStatus.MERGING);
+                task.setStage("ffmpeg 合并音视频");
+                task.setProgress(100);
+                String ext = task.getQuality() >= 120 ? ".mkv" : ".mp4";
+                File output = ffmpegUtil.merge(videoFile.getAbsolutePath(), audioFile.getAbsolutePath(), base + ext);
+
+                if (videoFile.exists()) videoFile.delete();
+                if (audioFile.exists()) audioFile.delete();
+
+                task.setOutputFile(output.getAbsolutePath());
+                task.setOutputSize(formatSize(output.length()));
+                task.setStatus(TaskStatus.COMPLETED);
+                task.setFinishedAt(System.currentTimeMillis());
+                log.info("任务 {} 完成: {}", task.getId(), output.getAbsolutePath());
+                return;
+            } catch (DownloadCancelledException e) {
+                cleanup(videoFile, audioFile);
+                task.setStatus(TaskStatus.CANCELLED);
+                task.setError("已取消");
+                task.setFinishedAt(System.currentTimeMillis());
+                return;
+            } catch (QualityPermissionException e) {
+                cleanup(videoFile, audioFile);
+                task.setStatus(TaskStatus.FAILED);
+                task.setError("画质权限不足: " + e.getMessage() + "（请配置大会员 Cookie）");
+                task.setFinishedAt(System.currentTimeMillis());
+                return;
+            } catch (Exception e) {
+                // 网络类错误：自动重试（限次数 + 间隔），期间可取消
+                if (attempts < TASK_AUTO_RETRY_MAX && isNetworkError(e)) {
+                    attempts++;
+                    cleanup(videoFile, audioFile);
+                    task.setError("网络异常，即将自动重试 (" + attempts + "/" + TASK_AUTO_RETRY_MAX + ")");
+                    task.setStage("等待重试");
+                    log.warn("任务 {} 网络异常，{} 秒后重试 ({}/{}): {}",
+                            task.getId(), TASK_AUTO_RETRY_DELAY, attempts, TASK_AUTO_RETRY_MAX, e.getMessage());
+                    try {
+                        for (int i = 0; i < TASK_AUTO_RETRY_DELAY * 2; i++) {
+                            if (task.isCancelled()) {
+                                throw new DownloadCancelledException();
+                            }
+                            Thread.sleep(500);
+                        }
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        cleanup(videoFile, audioFile);
+                        task.setStatus(TaskStatus.FAILED);
+                        task.setError("任务被中断");
+                        task.setFinishedAt(System.currentTimeMillis());
+                        return;
+                    } catch (DownloadCancelledException ce) {
+                        cleanup(videoFile, audioFile);
+                        task.setStatus(TaskStatus.CANCELLED);
+                        task.setError("已取消");
+                        task.setFinishedAt(System.currentTimeMillis());
+                        return;
+                    }
+                    continue;
+                }
+                cleanup(videoFile, audioFile);
+                task.setStatus(TaskStatus.FAILED);
+                task.setError(e.getMessage());
+                task.setFinishedAt(System.currentTimeMillis());
+                log.error("任务 {} 失败", task.getId(), e);
+                return;
             }
-            task.setActualQuality(video.getId());
-
-            // 2. 下载视频流 + 音频流
-            String base = new File(dir, task.getPagePart() + "_" + sanitize(task.getPageTitle())).getAbsolutePath();
-            videoFile = new File(base + "_v.m4s");
-            audioFile = new File(base + "_a.m4s");
-
-            task.setTotalBytes(Math.max(1, probeTotal(play)));
-            AtomicLong done = new AtomicLong(0);
-            downloadStream(videoFile, urlList(video), task, "下载视频流", done);
-            downloadStream(audioFile, urlList(audio), task, "下载音频流", done);
-
-            // 3. 合并
-            task.setStatus(TaskStatus.MERGING);
-            task.setStage("ffmpeg 合并音视频");
-            task.setProgress(100);
-            String ext = task.getQuality() >= 120 ? ".mkv" : ".mp4";
-            File output = ffmpegUtil.merge(videoFile.getAbsolutePath(), audioFile.getAbsolutePath(), base + ext);
-
-            // 4. 清理临时文件
-            if (videoFile.exists()) videoFile.delete();
-            if (audioFile.exists()) audioFile.delete();
-
-            task.setOutputFile(output.getAbsolutePath());
-            task.setOutputSize(formatSize(output.length()));
-            task.setStatus(TaskStatus.COMPLETED);
-            task.setFinishedAt(System.currentTimeMillis());
-            log.info("任务 {} 完成: {}", task.getId(), output.getAbsolutePath());
-        } catch (DownloadCancelledException e) {
-            cleanup(videoFile, audioFile);
-            task.setStatus(TaskStatus.CANCELLED);
-            task.setError("已取消");
-            task.setFinishedAt(System.currentTimeMillis());
-        } catch (QualityPermissionException e) {
-            cleanup(videoFile, audioFile);
-            task.setStatus(TaskStatus.FAILED);
-            task.setError("画质权限不足: " + e.getMessage() + "（请配置大会员 Cookie）");
-            task.setFinishedAt(System.currentTimeMillis());
-        } catch (Exception e) {
-            cleanup(videoFile, audioFile);
-            task.setStatus(TaskStatus.FAILED);
-            task.setError(e.getMessage());
-            task.setFinishedAt(System.currentTimeMillis());
-            log.error("任务 {} 失败", task.getId(), e);
         }
+    }
+
+    /** 网络类错误判断：用于任务级自动重试 */
+    private boolean isNetworkError(Throwable e) {
+        if (e instanceof java.net.SocketException) return true;
+        if (e instanceof java.net.SocketTimeoutException) return true;
+        if (e instanceof org.apache.http.conn.ConnectTimeoutException) return true;
+        String msg = String.valueOf(e.getMessage()).toLowerCase();
+        return msg.contains("timeout") || msg.contains("connect")
+                || msg.contains("socket") || msg.contains("read timed out")
+                || msg.contains("连接") || msg.contains("网络")
+                || msg.contains("reset") || msg.contains("broken pipe");
     }
 
     /** 选择视频流：优先精确匹配请求画质，否则取可用最高画质 */
@@ -194,6 +296,11 @@ public class DownloadService {
             if (size > 0) { total += size; break; }
         }
         return total;
+    }
+
+    /** 探测单个流大小（仅音频模式用） */
+    private long probeSingleSize(StreamInfo s) {
+        return apiClient.probeSize(firstUrl(s));
     }
 
     private List<String> urlList(StreamInfo s) {

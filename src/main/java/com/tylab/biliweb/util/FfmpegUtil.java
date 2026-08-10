@@ -47,12 +47,7 @@ public class FfmpegUtil {
      * @return 合并输出文件
      */
     public File merge(String videoPath, String audioPath, String outputPath) throws IOException, InterruptedException {
-        String ffmpeg = resolvePath();
-        if (ffmpeg == null) {
-            throw new IOException("未找到 ffmpeg，无法合并音视频");
-        }
         List<String> cmd = new ArrayList<>();
-        cmd.add(ffmpeg);
         cmd.add("-y");
         cmd.add("-i");
         cmd.add(videoPath);
@@ -63,23 +58,52 @@ public class FfmpegUtil {
         cmd.add("-c:a");
         cmd.add("copy");
         cmd.add(outputPath);
+        run(cmd, "ffmpeg 合并失败");
+        return new File(outputPath);
+    }
+
+    /**
+     * 将音频流转码为 mp3（libmp3lame）。
+     * @return 转码输出文件
+     */
+    public File transcodeToMp3(String audioPath, String outputPath) throws IOException, InterruptedException {
+        List<String> cmd = new ArrayList<>();
+        cmd.add("-y");
+        cmd.add("-i");
+        cmd.add(audioPath);
+        cmd.add("-vn");
+        cmd.add("-c:a");
+        cmd.add("libmp3lame");
+        cmd.add("-q:a");
+        cmd.add("2");
+        cmd.add(outputPath);
+        run(cmd, "ffmpeg 转码失败");
+        return new File(outputPath);
+    }
+
+    /** 执行 ffmpeg 命令（公共参数），消费输出防阻塞 */
+    private void run(List<String> args, String failMsg) throws IOException, InterruptedException {
+        String ffmpeg = resolvePath();
+        if (ffmpeg == null) {
+            throw new IOException("未找到 ffmpeg，无法执行媒体处理");
+        }
+        List<String> cmd = new ArrayList<>();
+        cmd.add(ffmpeg);
+        cmd.addAll(args);
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         Process p = pb.start();
-        // 消费输出，防止缓冲区阻塞
         try (java.io.BufferedReader br = new java.io.BufferedReader(
                 new java.io.InputStreamReader(p.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
             String line;
             while ((line = br.readLine()) != null) {
-                // 静默，仅调试时打印
                 System.out.println("[ffmpeg] " + line);
             }
         }
         int exit = p.waitFor();
         if (exit != 0) {
-            throw new IOException("ffmpeg 合并失败，退出码 " + exit);
+            throw new IOException(failMsg + "，退出码 " + exit);
         }
-        return new File(outputPath);
     }
 
     private String readFirstLine(Process p) throws IOException {

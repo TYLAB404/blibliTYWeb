@@ -75,7 +75,7 @@
       <input id="urlInput" placeholder="粘贴 B 站视频链接，如 https://www.bilibili.com/video/BVxxxxxxxxxx" />
       <button class="btn" id="parseBtn" onclick="parse()">解析</button>
     </div>
-    <div class="hint">支持 BV 号 / av 号 / 完整视频链接（含分P）</div>
+    <div class="hint">支持 BV 号 / av 号 / 完整链接 / b23.tv 短链 / 手机端分享链接（含分P）</div>
     <div id="parseErr" class="err-msg"></div>
 
     <div id="videoInfo" style="display:none">
@@ -86,6 +86,11 @@
           <div class="select-row">
             <label>分P</label>
             <select id="pageSelect" onchange="loadFormats()"></select>
+            <label>模式</label>
+            <select id="modeSelect" onchange="onModeChange()">
+              <option value="video">视频</option>
+              <option value="audio">仅音频</option>
+            </select>
             <label>画质</label>
             <select id="formatSelect"></select>
             <button class="btn" id="dlBtn" onclick="startDownload()">开始下载</button>
@@ -179,11 +184,14 @@ async function loadFormats() {
 async function startDownload() {
   if (!currentVideo) return;
   const page = currentVideo.pages[document.getElementById('pageSelect').value];
-  const quality = parseInt(document.getElementById('formatSelect').value, 10);
+  const mode = document.getElementById('modeSelect').value;
+  const audioOnly = mode === 'audio';
+  const quality = audioOnly ? 16 : parseInt(document.getElementById('formatSelect').value, 10);
   const body = {
     bvid: currentVideo.bvid,
     cid: page.cid,
     quality: quality,
+    audioOnly: audioOnly,
     videoTitle: currentVideo.title,
     pageTitle: page.part || ('P' + page.page),
     pagePart: currentVideo.pages.length > 1 ? ('P' + String(page.page).padStart(2, '0')) : 'P1'
@@ -199,6 +207,22 @@ async function startDownload() {
     refreshTasks();
   } catch (e) {
     alert('网络错误: ' + e.message);
+  }
+}
+
+/* 模式切换：音频模式隐藏画质选择（音频固定），视频模式加载画质列表 */
+function onModeChange() {
+  const audioOnly = document.getElementById('modeSelect').value === 'audio';
+  const fmtLabel = document.querySelector('.select-row label[for="formatSelect"]');
+  const fmtSelect = document.getElementById('formatSelect');
+  const fmtLabelNode = document.querySelectorAll('.select-row label')[2]; // 画质 label
+  if (audioOnly) {
+    if (fmtLabelNode) fmtLabelNode.style.display = 'none';
+    if (fmtSelect) { fmtSelect.style.display = 'none'; fmtSelect.innerHTML = '<option value="16">音频</option>'; }
+  } else {
+    if (fmtLabelNode) fmtLabelNode.style.display = '';
+    if (fmtSelect) fmtSelect.style.display = '';
+    loadFormats();
   }
 }
 
@@ -224,8 +248,9 @@ function renderTask(t) {
     actions = '<div class="actions"><button class="btn ghost" style="font-size:13px;padding:7px 14px" onclick="cancelTask(\'' + t.id + '\')">取消</button></div>';
   }
   const stage = t.status === 'DOWNLOADING' ? (' ' + (t.stage || '')) : '';
+  const modeTag = t.audioOnly ? '<span style="font-size:11px;color:#8a8f98;background:#f0f1f3;border-radius:4px;padding:1px 6px;margin-left:6px">音频</span>' : '';
   return '<div class="task">'
-    + '<div class="top"><span class="title">' + esc(t.videoTitle) + (t.pagePart !== 'P1' ? ' · ' + esc(t.pagePart) : '') + '</span>'
+    + '<div class="top"><span class="title">' + esc(t.videoTitle) + (t.pagePart !== 'P1' ? ' · ' + esc(t.pagePart) : '') + modeTag + '</span>'
     + '<span class="status ' + statusClass + '">' + esc(t.statusLabel || t.status) + stage + '</span></div>'
     + (t.status === 'COMPLETED' || t.status === 'FAILED' || t.status === 'CANCELLED' ? '' :
       '<div class="bar"><div style="width:' + pct + '%"></div></div>')

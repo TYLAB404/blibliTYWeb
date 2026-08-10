@@ -294,16 +294,53 @@ public class BiliApiClient {
         }
     }
 
-    /** 从 B 站链接/文本中提取 BV 号或 aid */
-    public static class LinkResult {
-        public final String bvid;
-        public final Long aid;
-        public LinkResult(String bvid, Long aid) {
-            this.bvid = bvid;
-            this.aid = aid;
+    /** 从 B 站链接/文本中提取 BV 号或 aid（含 b23.tv 短链跟随跳转） */
+    public LinkResult resolveLink(String input) {
+        if (input == null) return null;
+        String text = input.trim();
+        // 手机端分享格式：去掉标题前缀（如【哔哩哔哩】、视频标题等）
+        java.util.regex.Matcher urlMatcher = java.util.regex.Pattern
+                .compile("https?://[^\\s，,]+", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
+        if (urlMatcher.find()) {
+            String url = urlMatcher.group();
+            // b23.tv / bilibili.tv 短链：跟随跳转取最终 URL
+            if (url.matches("(?i)https?://(?:b23\\.tv|bilibili\\.tv)/.*")) {
+                String resolved = followRedirect(url);
+                if (resolved != null) {
+                    LinkResult r = parseLink(resolved);
+                    if (r != null) return r;
+                }
+            }
+            LinkResult r = parseLink(url);
+            if (r != null) return r;
+        }
+        return parseLink(text);
+    }
+
+    /** 跟随短链跳转，返回最终 URL（失败返回 null） */
+    public String followRedirect(String url) {
+        // 用不自动跟随重定向的请求，手动拿 Location
+        HttpGet request = new HttpGet(url);
+        RequestConfig cfg = RequestConfig.custom()
+                .setRedirectsEnabled(false)
+                .build();
+        request.setConfig(cfg);
+        try (CloseableHttpResponse resp = httpClient.execute(request)) {
+            int status = resp.getStatusLine().getStatusCode();
+            if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+                Header location = resp.getFirstHeader("Location");
+                if (location != null && location.getValue() != null) {
+                    String loc = location.getValue();
+                    return loc.startsWith("http") ? loc : url;
+                }
+            }
+            return null;
+        } catch (IOException e) {
+            return null;
         }
     }
 
+    /** 从文本中提取 BV 号或 aid */
     public static LinkResult parseLink(String input) {
         if (input == null) return null;
         java.util.regex.Matcher bv = java.util.regex.Pattern.compile("BV[0-9A-Za-z]{10}").matcher(input);
@@ -322,6 +359,16 @@ public class BiliApiClient {
             return java.net.URLEncoder.encode(s, "UTF-8");
         } catch (Exception e) {
             return s;
+        }
+    }
+
+    /** 链接解析结果 */
+    public static class LinkResult {
+        public final String bvid;
+        public final Long aid;
+        public LinkResult(String bvid, Long aid) {
+            this.bvid = bvid;
+            this.aid = aid;
         }
     }
 }

@@ -14,7 +14,8 @@ public class DownloadTask implements Runnable {
     private final int quality;
     private final String videoTitle;
     private final String pageTitle;
-    private final String pagePart; // P1 / 第1集 等展示前缀
+    private final String pagePart;
+    private final boolean audioOnly; // true=仅音频模式（下载音频转 mp3） // P1 / 第1集 等展示前缀
 
     private volatile TaskStatus status = TaskStatus.WAITING;
     private volatile double progress = 0;
@@ -35,6 +36,11 @@ public class DownloadTask implements Runnable {
 
     public DownloadTask(String id, String bvid, long cid, int quality,
                         String videoTitle, String pageTitle, String pagePart) {
+        this(id, bvid, cid, quality, videoTitle, pageTitle, pagePart, false);
+    }
+
+    public DownloadTask(String id, String bvid, long cid, int quality,
+                        String videoTitle, String pageTitle, String pagePart, boolean audioOnly) {
         this.id = id;
         this.bvid = bvid;
         this.cid = cid;
@@ -42,6 +48,7 @@ public class DownloadTask implements Runnable {
         this.videoTitle = videoTitle;
         this.pageTitle = pageTitle;
         this.pagePart = pagePart;
+        this.audioOnly = audioOnly;
     }
 
     public void setAction(Runnable action) { this.action = action; }
@@ -61,6 +68,8 @@ public class DownloadTask implements Runnable {
             this.progress = Math.min(100, bytesDone * 100.0 / bytesTotal);
         }
     }
+
+    public boolean isAudioOnly() { return audioOnly; }
 
     public String getId() { return id; }
     public String getBvid() { return bvid; }

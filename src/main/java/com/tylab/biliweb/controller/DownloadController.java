@@ -40,6 +40,7 @@ public class DownloadController {
         String videoTitle = (String) body.get("videoTitle");
         String pageTitle = (String) body.get("pageTitle");
         String pagePart = (String) body.get("pagePart");
+        Boolean audioOnly = body.get("audioOnly") == null ? Boolean.FALSE : (Boolean) body.get("audioOnly");
         if (bvid == null || cid == null || quality == null) {
             throw new IllegalArgumentException("参数不完整: bvid/cid/quality 必填");
         }
@@ -47,7 +48,7 @@ public class DownloadController {
         if (pageTitle == null || pageTitle.isEmpty()) pageTitle = videoTitle;
         if (pagePart == null || pagePart.isEmpty()) pagePart = "P1";
         return downloadService.createTask(bvid, cid.longValue(), quality.intValue(),
-                videoTitle, pageTitle, pagePart);
+                videoTitle, pageTitle, pagePart, audioOnly);
     }
 
     /** 所有任务 */
