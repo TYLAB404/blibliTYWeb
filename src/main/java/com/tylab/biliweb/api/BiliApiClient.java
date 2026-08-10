@@ -160,13 +160,26 @@ public class BiliApiClient {
         String url = "https://api.bilibili.com/x/player/playurl?bvid=" + urlEncode(bvid)
                 + "&cid=" + cid + "&qn=127&fnval=" + FNVAL + "&fourk=1";
         JsonNode data = getJson(url, true);
-        List<FormatOption> formats = new ArrayList<>();
+        // 实际可用的画质：DASH 流中真实存在的视频流 id（未登录/无大会员时 B 站只下发低画质流）
+        java.util.Set<Integer> actual = new java.util.LinkedHashSet<>();
+        for (JsonNode v : data.path("dash").path("video")) {
+            actual.add(v.path("id").asInt());
+        }
+        // 画质描述：accept_quality + accept_description 配对
+        java.util.Map<Integer, String> descMap = new java.util.LinkedHashMap<>();
         JsonNode qualities = data.path("accept_quality");
         JsonNode descs = data.path("accept_description");
         for (int i = 0; i < qualities.size(); i++) {
             int q = qualities.get(i).asInt();
             String d = i < descs.size() ? descs.get(i).asText() : String.valueOf(q);
-            formats.add(new FormatOption(q, d, true));
+            descMap.put(q, d);
+        }
+        // 输出：只在 accept_quality 中保留实际可下的画质，保持从高到低顺序
+        List<FormatOption> formats = new ArrayList<>();
+        for (java.util.Map.Entry<Integer, String> e : descMap.entrySet()) {
+            if (actual.contains(e.getKey())) {
+                formats.add(new FormatOption(e.getKey(), e.getValue(), true));
+            }
         }
         return formats;
     }

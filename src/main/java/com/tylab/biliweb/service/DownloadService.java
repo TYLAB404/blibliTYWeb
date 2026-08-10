@@ -86,12 +86,33 @@ public class DownloadService {
         if (dup != null) {
             throw new IllegalArgumentException("该内容已在下载列表中（" + dup.getPagePart() + "），无需重复添加");
         }
+        // 画质权限预检：请求画质必须实际可下，否则拒绝并提示（防止误以为下载到高画质）
+        if (!audioOnly) {
+            checkQualityAvailable(bvid, cid, quality);
+        }
         String id = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         DownloadTask task = new DownloadTask(id, bvid, cid, quality, videoTitle, pageTitle, pagePart, audioOnly);
         task.setAction(() -> execute(task));
         tasks.put(id, task);
         executor.submit(task);
         return task;
+    }
+
+    /** 预检：请求画质是否实际可下载（B 站无权限/视频源限制时会静默降级，这里直接阻止） */
+    private void checkQualityAvailable(String bvid, long cid, int quality) {
+        PlayUrlResult play = apiClient.getPlayUrl(bvid, cid, quality);
+        int actualMax = -1;
+        for (StreamInfo s : play.getVideoStreams()) {
+            if (s.getId() > actualMax) actualMax = s.getId();
+        }
+        if (actualMax < 0) {
+            throw new IllegalArgumentException("无法获取可用画质（可能需要登录或大会员 Cookie）");
+        }
+        if (quality > actualMax) {
+            throw new IllegalArgumentException("所选画质不可用：当前账号/视频最高支持 "
+                    + qnDesc(actualMax) + "（" + actualMax + "），无法下载 " + qnDesc(quality)
+                    + "（" + quality + "）。请在画质列表中选择可用的画质。");
+        }
     }
 
     /** 查找相同 bvid+cid+模式 的活跃任务（进行中/排队/合并），用于去重 */
@@ -180,7 +201,8 @@ public class DownloadService {
                 task.setStatus(TaskStatus.MERGING);
                 task.setStage("ffmpeg 合并音视频");
                 task.setProgress(100);
-                String ext = task.getQuality() >= 120 ? ".mkv" : ".mp4";
+                // 扩展名按实际下到的画质决定（HEVC 编码的高画质用 mkv 容器更兼容）
+                String ext = task.getActualQuality() >= 120 ? ".mkv" : ".mp4";
                 File output = ffmpegUtil.merge(videoFile.getAbsolutePath(), audioFile.getAbsolutePath(), base + ext);
 
                 if (videoFile.exists()) videoFile.delete();
@@ -256,6 +278,24 @@ public class DownloadService {
                 || msg.contains("socket") || msg.contains("read timed out")
                 || msg.contains("连接") || msg.contains("网络")
                 || msg.contains("reset") || msg.contains("broken pipe");
+    }
+
+    /** 画质码 → 中文描述（用于提示） */
+    private static String qnDesc(int qn) {
+        switch (qn) {
+            case 127: return "8K 超高清";
+            case 126: return "杜比视界";
+            case 125: return "HDR 真彩";
+            case 120: return "4K 超清";
+            case 116: return "1080P 60帧";
+            case 112: return "1080P 高码率";
+            case 80:  return "1080P 高清";
+            case 74:  return "720P 60帧";
+            case 64:  return "720P 高清";
+            case 32:  return "480P 清晰";
+            case 16:  return "360P 流畅";
+            default:  return "画质" + qn;
+        }
     }
 
     /** 选择视频流：优先精确匹配请求画质，否则取可用最高画质 */

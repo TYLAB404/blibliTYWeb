@@ -249,8 +249,13 @@ function renderTask(t) {
   }
   const stage = t.status === 'DOWNLOADING' ? (' ' + (t.stage || '')) : '';
   const modeTag = t.audioOnly ? '<span style="font-size:11px;color:#8a8f98;background:#f0f1f3;border-radius:4px;padding:1px 6px;margin-left:6px">音频</span>' : '';
+  // 实际画质展示（视频模式且已确定画质）
+  let qualityTag = '';
+  if (!t.audioOnly && t.actualQuality > 0 && (t.status === 'COMPLETED' || t.status === 'DOWNLOADING')) {
+    qualityTag = '<span style="font-size:11px;color:#fb7299;background:#fdeef3;border-radius:4px;padding:1px 6px;margin-left:6px">实际 ' + qnDesc(t.actualQuality) + '</span>';
+  }
   return '<div class="task">'
-    + '<div class="top"><span class="title">' + esc(t.videoTitle) + (t.pagePart !== 'P1' ? ' · ' + esc(t.pagePart) : '') + modeTag + '</span>'
+    + '<div class="top"><span class="title">' + esc(t.videoTitle) + (t.pagePart !== 'P1' ? ' · ' + esc(t.pagePart) : '') + modeTag + qualityTag + '</span>'
     + '<span class="status ' + statusClass + '">' + esc(t.statusLabel || t.status) + stage + '</span></div>'
     + (t.status === 'COMPLETED' || t.status === 'FAILED' || t.status === 'CANCELLED' ? '' :
       '<div class="bar"><div style="width:' + pct + '%"></div></div>')
@@ -263,6 +268,12 @@ function renderTask(t) {
 async function cancelTask(id) {
   await fetch('/api/task/' + id + '/cancel', { method: 'POST' });
   refreshTasks();
+}
+
+/* 画质码 → 中文描述 */
+function qnDesc(qn) {
+  const map = { 127: '8K', 126: '杜比视界', 125: 'HDR', 120: '4K', 116: '1080P60', 112: '1080P+', 80: '1080P', 74: '720P60', 64: '720P', 32: '480P', 16: '360P' };
+  return map[qn] || ('画质' + qn);
 }
 
 /* ---- Cookie 管理 ---- */
