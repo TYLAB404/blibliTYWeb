@@ -34,7 +34,7 @@ public class BiliApiClient {
     private static final int FNVAL = 4048 | 1024 | 512 | 256;
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final String cookie;
+    private volatile String cookie;
     private final CloseableHttpClient httpClient;
 
     public BiliApiClient(@Value("${app.bilibili-cookie:}") String cookie) {
@@ -57,6 +57,63 @@ public class BiliApiClient {
     @PreDestroy
     public void close() throws IOException {
         httpClient.close();
+    }
+
+    /** 运行时更新 Cookie（页面管理入口调用） */
+    public synchronized void setCookie(String cookie) {
+        this.cookie = cookie == null ? "" : cookie.trim();
+    }
+
+    public String getCookie() {
+        return cookie;
+    }
+
+    /**
+     * 检测当前 Cookie 的登录状态（B 站 nav 接口）。
+     * 返回 null 表示网络失败；否则返回 {isLogin, uname, vipStatus, vipType}。
+     */
+    public LoginStatus checkLogin() {
+        return checkLoginWith(cookie);
+    }
+
+    /** 用指定 Cookie 检测登录状态，不改变当前 Cookie */
+    public LoginStatus checkLoginWith(String testCookie) {
+        HttpGet request = new HttpGet("https://api.bilibili.com/x/web-interface/nav");
+        if (testCookie != null && !testCookie.isEmpty()) {
+            request.setHeader("Cookie", testCookie);
+        }
+        try (CloseableHttpResponse resp = httpClient.execute(request)) {
+            if (resp.getStatusLine().getStatusCode() != 200) {
+                return null;
+            }
+            JsonNode root = mapper.readTree(resp.getEntity().getContent());
+            if (root.path("code").asInt(-1) != 0) {
+                return new LoginStatus(false, "", 0, 0);
+            }
+            JsonNode data = root.path("data");
+            return new LoginStatus(
+                    data.path("isLogin").asBoolean(false),
+                    data.path("uname").asText(""),
+                    data.path("vipStatus").asInt(0),
+                    data.path("vipType").asInt(0));
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** 登录状态结果 */
+    public static class LoginStatus {
+        public final boolean isLogin;
+        public final String uname;
+        public final int vipStatus; // 0=非会员 1=大会员
+        public final int vipType;
+
+        public LoginStatus(boolean isLogin, String uname, int vipStatus, int vipType) {
+            this.isLogin = isLogin;
+            this.uname = uname;
+            this.vipStatus = vipStatus;
+            this.vipType = vipType;
+        }
     }
 
     /** 获取视频信息（标题、封面、分P 列表） */

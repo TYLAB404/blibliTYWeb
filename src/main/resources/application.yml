@@ -6,8 +6,10 @@ app:
   download-dir: ./downloads
   # ffmpeg 可执行文件路径；留空则自动在 PATH 中查找
   ffmpeg-path: ./tools/ffmpeg.exe
-  # B 站 Cookie（可选，用于下载大会员/登录画质）
+  # B 站 Cookie（可选，用于下载大会员/登录画质）；也可在页面用管理口令动态配置（存于 config/cookie.json）
   bilibili-cookie: ""
+  # Cookie 管理口令（必填，用于页面动态配置 Cookie 的鉴权；局域网内任意设备输入此口令即可配置）
+  cookie-admin-token: "test-admin-2026"
 
 spring:
   jackson:

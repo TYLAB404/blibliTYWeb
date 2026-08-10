@@ -2,6 +2,7 @@ target/
 *.class
 downloads/
 tools/
+config/
 .idea/
 *.iml
 .vscode/
