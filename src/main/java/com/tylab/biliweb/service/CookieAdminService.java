@@ -108,6 +108,7 @@ public class CookieAdminService {
         saveEncryptedToFile(trimmed, resolvedType);
         // 立即生效
         apiClient.setCookie(trimmed);
+        clearCache();
         log.info("Cookie 已加密持久化并生效（方式: {}, 账号: {}）", resolvedType, login.uname);
         return buildStatus(true, login);
     }
@@ -173,7 +174,29 @@ public class CookieAdminService {
         return map;
     }
 
-    /** 当前 Cookie 状态（脱敏，不含明文） */
+    private volatile CookieStatus cachedStatus = null;
+    private volatile long cacheTime = 0L;
+    private static final long CACHE_TTL_MS = 60_000L; // 60秒轻量缓存
+
+    /** 获取缓存的 Cookie 状态，供前端公开状态栏高频读取（TTL 60秒） */
+    public CookieStatus getStatusCached() {
+        long now = System.currentTimeMillis();
+        CookieStatus cached = this.cachedStatus;
+        if (cached != null && (now - cacheTime < CACHE_TTL_MS)) {
+            return cached;
+        }
+        CookieStatus status = getStatus();
+        this.cachedStatus = status;
+        this.cacheTime = now;
+        return status;
+    }
+
+    public void clearCache() {
+        this.cachedStatus = null;
+        this.cacheTime = 0L;
+    }
+
+    /** 当前 Cookie 状态（脱敏，不含明文，实时探活） */
     public CookieStatus getStatus() {
         String cookie = apiClient.getCookie();
         if (cookie == null || cookie.isEmpty()) {

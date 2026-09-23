@@ -4,20 +4,14 @@ import com.tylab.biliweb.model.CookieStatus;
 import com.tylab.biliweb.service.CookieAdminService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.Collections;
 import java.util.Map;
 
-/** Cookie 管理接口（需管理口令） */
+/** Cookie 状态与管理接口 */
 @RestController
-@RequestMapping("/api/admin")
+@RequestMapping("/api")
 public class CookieAdminController {
 
     private final CookieAdminService cookieAdminService;
@@ -26,8 +20,23 @@ public class CookieAdminController {
         this.cookieAdminService = cookieAdminService;
     }
 
-    /** 保存/更新 Cookie（校验有效性后生效） */
-    @PostMapping("/cookie")
+    /** 公开查询当前 Cookie 状态（脱敏，免口令，带60秒内存防抖缓存，供顶部状态栏高频显示） */
+    @GetMapping("/cookie/status")
+    public CookieStatus publicStatus() {
+        return cookieAdminService.getStatusCached();
+    }
+
+    /** 校验管理口令（点击【验证口令】按钮后调用） */
+    @PostMapping("/admin/cookie/verify-token")
+    public ResponseEntity<?> verifyToken(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        if (!authorized(token)) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(Collections.singletonMap("valid", true));
+    }
+
+    /** 保存/更新 Cookie（校验有效性后生效，需管理口令） */
+    @PostMapping("/admin/cookie")
     public ResponseEntity<?> saveCookie(@RequestHeader(value = "X-Admin-Token", required = false) String token,
                                         @RequestBody Map<String, String> body) {
         if (!authorized(token)) return unauthorized();
@@ -42,21 +51,21 @@ public class CookieAdminController {
         }
     }
 
-    /** 查询当前 Cookie 状态（脱敏，不含明文） */
-    @GetMapping("/cookie/status")
-    public ResponseEntity<?> status(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
+    /** 管理员查询当前最新 Cookie 状态（实时探活，需管理口令） */
+    @GetMapping("/admin/cookie/status")
+    public ResponseEntity<?> adminStatus(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
         if (!authorized(token)) return unauthorized();
         return ResponseEntity.ok(cookieAdminService.getStatus());
     }
 
     /** 管理口令是否已配置（无需口令即可查，用于前端提示） */
-    @GetMapping("/cookie/token-configured")
+    @GetMapping("/admin/cookie/token-configured")
     public Map<String, Object> tokenConfigured() {
         return Collections.singletonMap("configured", cookieAdminService.isTokenConfigured());
     }
 
-    /** 申请登录二维码（含 Base64 图片） */
-    @PostMapping("/login/qrcode/generate")
+    /** 申请登录二维码（含 Base64 图片，需管理口令） */
+    @PostMapping("/admin/login/qrcode/generate")
     public ResponseEntity<?> generateQrCode(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
         if (!authorized(token)) return unauthorized();
         try {
@@ -67,8 +76,8 @@ public class CookieAdminController {
         }
     }
 
-    /** 轮询登录二维码扫码状态（扫码成功自动加密保存） */
-    @GetMapping("/login/qrcode/poll")
+    /** 轮询登录二维码扫码状态（扫码成功自动加密保存，需管理口令） */
+    @GetMapping("/admin/login/qrcode/poll")
     public ResponseEntity<?> pollQrCode(@RequestHeader(value = "X-Admin-Token", required = false) String token,
                                         @RequestParam("qrcodeKey") String qrcodeKey) {
         if (!authorized(token)) return unauthorized();
