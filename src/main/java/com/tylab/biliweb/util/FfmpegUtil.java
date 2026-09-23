@@ -47,6 +47,12 @@ public class FfmpegUtil {
      * @return 合并输出文件
      */
     public File merge(String videoPath, String audioPath, String outputPath) throws IOException, InterruptedException {
+        return merge(videoPath, audioPath, outputPath, null, null);
+    }
+
+    public File merge(String videoPath, String audioPath, String outputPath,
+                      java.util.function.Consumer<Process> onStart,
+                      java.util.function.BooleanSupplier isCancelled) throws IOException, InterruptedException {
         List<String> cmd = new ArrayList<>();
         cmd.add("-y");
         cmd.add("-i");
@@ -58,7 +64,7 @@ public class FfmpegUtil {
         cmd.add("-c:a");
         cmd.add("copy");
         cmd.add(outputPath);
-        run(cmd, "ffmpeg 合并失败");
+        run(cmd, "ffmpeg 合并失败", onStart, isCancelled);
         return new File(outputPath);
     }
 
@@ -67,6 +73,12 @@ public class FfmpegUtil {
      * @return 转码输出文件
      */
     public File transcodeToMp3(String audioPath, String outputPath) throws IOException, InterruptedException {
+        return transcodeToMp3(audioPath, outputPath, null, null);
+    }
+
+    public File transcodeToMp3(String audioPath, String outputPath,
+                               java.util.function.Consumer<Process> onStart,
+                               java.util.function.BooleanSupplier isCancelled) throws IOException, InterruptedException {
         List<String> cmd = new ArrayList<>();
         cmd.add("-y");
         cmd.add("-i");
@@ -77,15 +89,20 @@ public class FfmpegUtil {
         cmd.add("-q:a");
         cmd.add("2");
         cmd.add(outputPath);
-        run(cmd, "ffmpeg 转码失败");
+        run(cmd, "ffmpeg 转码失败", onStart, isCancelled);
         return new File(outputPath);
     }
 
-    /** 执行 ffmpeg 命令（公共参数），消费输出防阻塞 */
-    private void run(List<String> args, String failMsg) throws IOException, InterruptedException {
+    /** 执行 ffmpeg 命令，消费输出防阻塞，并支持取消销毁进程 */
+    private void run(List<String> args, String failMsg,
+                     java.util.function.Consumer<Process> onStart,
+                     java.util.function.BooleanSupplier isCancelled) throws IOException, InterruptedException {
         String ffmpeg = resolvePath();
         if (ffmpeg == null) {
             throw new IOException("未找到 ffmpeg，无法执行媒体处理");
+        }
+        if (isCancelled != null && isCancelled.getAsBoolean()) {
+            throw new InterruptedException("任务已取消");
         }
         List<String> cmd = new ArrayList<>();
         cmd.add(ffmpeg);
@@ -93,16 +110,34 @@ public class FfmpegUtil {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         Process p = pb.start();
-        try (java.io.BufferedReader br = new java.io.BufferedReader(
-                new java.io.InputStreamReader(p.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                System.out.println("[ffmpeg] " + line);
-            }
+        if (onStart != null) {
+            onStart.accept(p);
         }
-        int exit = p.waitFor();
-        if (exit != 0) {
-            throw new IOException(failMsg + "，退出码 " + exit);
+        try {
+            try (java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(p.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (isCancelled != null && isCancelled.getAsBoolean()) {
+                        p.destroyForcibly();
+                        throw new InterruptedException("任务已取消");
+                    }
+                }
+            }
+            int exit = p.waitFor();
+            if (isCancelled != null && isCancelled.getAsBoolean()) {
+                throw new InterruptedException("任务已取消");
+            }
+            if (exit != 0) {
+                throw new IOException(failMsg + "，退出码 " + exit);
+            }
+        } finally {
+            if (p.isAlive()) {
+                try {
+                    p.destroyForcibly();
+                } catch (Exception ignored) {
+                }
+            }
         }
     }
 

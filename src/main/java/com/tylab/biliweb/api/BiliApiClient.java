@@ -47,7 +47,13 @@ public class BiliApiClient {
         List<Header> headers = new ArrayList<>();
         headers.add(new BasicHeader(HttpHeaders.USER_AGENT, UA));
         headers.add(new BasicHeader(HttpHeaders.REFERER, REFERER));
+        org.apache.http.impl.conn.PoolingHttpClientConnectionManager cm =
+                new org.apache.http.impl.conn.PoolingHttpClientConnectionManager();
+        cm.setMaxTotal(50);
+        cm.setDefaultMaxPerRoute(20);
+
         this.httpClient = HttpClients.custom()
+                .setConnectionManager(cm)
                 .setDefaultRequestConfig(config)
                 .setDefaultHeaders(headers)
                 .setRedirectStrategy(new LaxRedirectStrategy())

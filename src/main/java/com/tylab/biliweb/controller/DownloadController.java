@@ -41,6 +41,7 @@ public class DownloadController {
         String pageTitle = (String) body.get("pageTitle");
         String pagePart = (String) body.get("pagePart");
         Boolean audioOnly = body.get("audioOnly") == null ? Boolean.FALSE : (Boolean) body.get("audioOnly");
+        Boolean autoFallback = body.get("autoFallback") == null ? Boolean.TRUE : (Boolean) body.get("autoFallback");
         if (bvid == null || cid == null || quality == null) {
             throw new IllegalArgumentException("参数不完整: bvid/cid/quality 必填");
         }
@@ -48,7 +49,39 @@ public class DownloadController {
         if (pageTitle == null || pageTitle.isEmpty()) pageTitle = videoTitle;
         if (pagePart == null || pagePart.isEmpty()) pagePart = "P1";
         return downloadService.createTask(bvid, cid.longValue(), quality.intValue(),
-                videoTitle, pageTitle, pagePart, audioOnly);
+                videoTitle, pageTitle, pagePart, audioOnly, autoFallback);
+    }
+
+    /** 批量创建下载任务 */
+    @PostMapping("/batch-download")
+    public List<DownloadTask> batchDownload(@RequestBody Map<String, Object> body) {
+        String bvid = (String) body.get("bvid");
+        String videoTitle = (String) body.get("videoTitle");
+        Number quality = (Number) body.get("quality");
+        Boolean audioOnly = body.get("audioOnly") == null ? Boolean.FALSE : (Boolean) body.get("audioOnly");
+        Boolean autoFallback = body.get("autoFallback") == null ? Boolean.TRUE : (Boolean) body.get("autoFallback");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pages = (List<Map<String, Object>>) body.get("pages");
+        if (bvid == null || pages == null || pages.isEmpty() || quality == null) {
+            throw new IllegalArgumentException("参数不完整: bvid/quality/pages 必填");
+        }
+        List<DownloadTask> created = new java.util.ArrayList<>();
+        for (Map<String, Object> p : pages) {
+            Number cid = (Number) p.get("cid");
+            if (cid == null) continue;
+            String part = (String) p.get("part");
+            Number pageNum = (Number) p.get("page");
+            String pagePart = pageNum != null ? "P" + pageNum : "P1";
+            String pageTitle = part != null && !part.isEmpty() ? part : pagePart;
+            try {
+                DownloadTask t = downloadService.createTask(bvid, cid.longValue(), quality.intValue(),
+                        videoTitle, pageTitle, pagePart, audioOnly, autoFallback);
+                created.add(t);
+            } catch (Exception e) {
+                // 若单个任务添加失败（如已存在），记录日志并继续其它分P
+            }
+        }
+        return created;
     }
 
     /** 所有任务 */
@@ -74,7 +107,22 @@ public class DownloadController {
         return java.util.Collections.singletonMap("ok", ok);
     }
 
-    /** 下载已完成的任务文件 */
+    /** 删除任务（可选同时删除磁盘文件） */
+    @org.springframework.web.bind.annotation.DeleteMapping("/task/{id}")
+    public Map<String, Object> deleteTask(@PathVariable String id,
+                                          @org.springframework.web.bind.annotation.RequestParam(defaultValue = "false") boolean deleteFile) {
+        boolean ok = downloadService.deleteTask(id, deleteFile);
+        return java.util.Collections.singletonMap("ok", ok);
+    }
+
+    /** 清理已完成/失败/已取消的任务 */
+    @PostMapping("/tasks/clear")
+    public Map<String, Object> clearTasks(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "false") boolean deleteFiles) {
+        int count = downloadService.clearFinishedTasks(deleteFiles);
+        return java.util.Collections.singletonMap("clearedCount", count);
+    }
+
+    /** 下载已完成的任务文件（支持 Content-Length 与 Accept-Ranges） */
     @GetMapping("/task/{id}/file")
     public ResponseEntity<Resource> file(@PathVariable String id) {
         DownloadTask task = downloadService.getTask(id);
@@ -93,6 +141,8 @@ public class DownloadController {
         }
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + filename)
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .contentLength(f.length())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(new FileSystemResource(f));
     }

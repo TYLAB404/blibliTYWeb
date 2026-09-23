@@ -75,31 +75,65 @@ public class DownloadService {
     /** 创建并启动一个下载任务 */
     public DownloadTask createTask(String bvid, long cid, int quality,
                                    String videoTitle, String pageTitle, String pagePart) {
-        return createTask(bvid, cid, quality, videoTitle, pageTitle, pagePart, false);
+        return createTask(bvid, cid, quality, videoTitle, pageTitle, pagePart, false, false);
     }
 
     /** 创建并启动一个下载任务（audioOnly=true 时仅下载音频转 mp3） */
     public DownloadTask createTask(String bvid, long cid, int quality,
                                    String videoTitle, String pageTitle, String pagePart, boolean audioOnly) {
+        return createTask(bvid, cid, quality, videoTitle, pageTitle, pagePart, audioOnly, false);
+    }
+
+    /** 创建并启动一个下载任务（支持 autoFallback：当画质不足时自动降级为最高可用） */
+    public DownloadTask createTask(String bvid, long cid, int quality,
+                                   String videoTitle, String pageTitle, String pagePart,
+                                   boolean audioOnly, boolean autoFallback) {
+        // 磁盘空间检查：若下载盘剩余小于 1GB，提前阻断
+        checkDiskSpace();
+
         // 任务去重：相同 bvid+cid+模式 且 处于活跃状态的任务不重复添加
         DownloadTask dup = findActiveTask(bvid, cid, audioOnly);
         if (dup != null) {
             throw new IllegalArgumentException("该内容已在下载列表中（" + dup.getPagePart() + "），无需重复添加");
         }
-        // 画质权限预检：请求画质必须实际可下，否则拒绝并提示（防止误以为下载到高画质）
+        int resolvedQuality = quality;
         if (!audioOnly) {
-            checkQualityAvailable(bvid, cid, quality);
+            resolvedQuality = checkOrFallbackQuality(bvid, cid, quality, autoFallback);
         }
         String id = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-        DownloadTask task = new DownloadTask(id, bvid, cid, quality, videoTitle, pageTitle, pagePart, audioOnly);
+        DownloadTask task = new DownloadTask(id, bvid, cid, resolvedQuality, videoTitle, pageTitle, pagePart, audioOnly);
         task.setAction(() -> execute(task));
         tasks.put(id, task);
         executor.submit(task);
         return task;
     }
 
-    /** 预检：请求画质是否实际可下载（B 站无权限/视频源限制时会静默降级，这里直接阻止） */
-    private void checkQualityAvailable(String bvid, long cid, int quality) {
+    /** 检查下载盘剩余空间 */
+    private void checkDiskSpace() {
+        File dir = new File(downloadDir);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        long usable = dir.getUsableSpace();
+        if (usable > 0 && usable < 1024L * 1024 * 1024) {
+            throw new IllegalStateException("下载盘剩余空间不足（剩余 " + formatSize(usable) + "，低于 1GB 安全阈值），请清理磁盘");
+        }
+    }
+
+    /** 获取磁盘存储信息 */
+    public Map<String, Object> getStorageInfo() {
+        File dir = new File(downloadDir);
+        if (!dir.exists()) dir.mkdirs();
+        Map<String, Object> map = new java.util.HashMap<>();
+        map.put("totalBytes", dir.getTotalSpace());
+        map.put("usableBytes", dir.getUsableSpace());
+        map.put("usableFormatted", formatSize(dir.getUsableSpace()));
+        map.put("downloadDir", dir.getAbsolutePath());
+        return map;
+    }
+
+    /** 预检/自动回退：若请求画质超过可用最高画质，在 autoFallback 为 true 时降级，否则拒绝 */
+    private int checkOrFallbackQuality(String bvid, long cid, int quality, boolean autoFallback) {
         PlayUrlResult play = apiClient.getPlayUrl(bvid, cid, quality);
         int actualMax = -1;
         for (StreamInfo s : play.getVideoStreams()) {
@@ -109,10 +143,15 @@ public class DownloadService {
             throw new IllegalArgumentException("无法获取可用画质（可能需要登录或大会员 Cookie）");
         }
         if (quality > actualMax) {
+            if (autoFallback) {
+                log.info("视频 {} cid {} 画质 {} 不可用，自动降级为最高可用画质 {}", bvid, cid, quality, actualMax);
+                return actualMax;
+            }
             throw new IllegalArgumentException("所选画质不可用：当前账号/视频最高支持 "
                     + qnDesc(actualMax) + "（" + actualMax + "），无法下载 " + qnDesc(quality)
                     + "（" + quality + "）。请在画质列表中选择可用的画质。");
         }
+        return quality;
     }
 
     /** 查找相同 bvid+cid+模式 的活跃任务（进行中/排队/合并），用于去重 */
@@ -142,6 +181,40 @@ public class DownloadService {
         if (task == null) return false;
         task.cancel();
         return true;
+    }
+
+    /** 删除单个任务（可选删除本地已下载文件） */
+    public boolean deleteTask(String id, boolean deleteFile) {
+        DownloadTask task = tasks.get(id);
+        if (task == null) return false;
+        task.cancel();
+        tasks.remove(id);
+        if (deleteFile && task.getOutputFile() != null) {
+            File f = new File(task.getOutputFile());
+            if (f.exists()) {
+                f.delete();
+            }
+        }
+        return true;
+    }
+
+    /** 清理所有已结束（完成/失败/已取消）的任务 */
+    public int clearFinishedTasks(boolean deleteFiles) {
+        int count = 0;
+        List<String> finishedIds = new ArrayList<>();
+        for (DownloadTask t : tasks.values()) {
+            if (t.getStatus() == TaskStatus.COMPLETED
+                    || t.getStatus() == TaskStatus.FAILED
+                    || t.getStatus() == TaskStatus.CANCELLED) {
+                finishedIds.add(t.getId());
+            }
+        }
+        for (String id : finishedIds) {
+            if (deleteTask(id, deleteFiles)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** 任务主流程（含网络错误自动重试） */
@@ -175,7 +248,14 @@ public class DownloadService {
                     task.setStatus(TaskStatus.MERGING);
                     task.setStage("ffmpeg 转码 MP3");
                     task.setProgress(100);
-                    File output = ffmpegUtil.transcodeToMp3(audioFile.getAbsolutePath(), base + ".mp3");
+                    task.setSpeedText("");
+                    task.setEtaText("");
+                    File output = ffmpegUtil.transcodeToMp3(
+                            audioFile.getAbsolutePath(),
+                            base + ".mp3",
+                            task::setCurrentProcess,
+                            task::isCancelled);
+                    task.setCurrentProcess(null);
 
                     if (audioFile.exists()) audioFile.delete();
                     task.setOutputFile(output.getAbsolutePath());
@@ -201,9 +281,17 @@ public class DownloadService {
                 task.setStatus(TaskStatus.MERGING);
                 task.setStage("ffmpeg 合并音视频");
                 task.setProgress(100);
+                task.setSpeedText("");
+                task.setEtaText("");
                 // 扩展名按实际下到的画质决定（HEVC 编码的高画质用 mkv 容器更兼容）
                 String ext = task.getActualQuality() >= 120 ? ".mkv" : ".mp4";
-                File output = ffmpegUtil.merge(videoFile.getAbsolutePath(), audioFile.getAbsolutePath(), base + ext);
+                File output = ffmpegUtil.merge(
+                        videoFile.getAbsolutePath(),
+                        audioFile.getAbsolutePath(),
+                        base + ext,
+                        task::setCurrentProcess,
+                        task::isCancelled);
+                task.setCurrentProcess(null);
 
                 if (videoFile.exists()) videoFile.delete();
                 if (audioFile.exists()) audioFile.delete();
@@ -214,13 +302,15 @@ public class DownloadService {
                 task.setFinishedAt(System.currentTimeMillis());
                 log.info("任务 {} 完成: {}", task.getId(), output.getAbsolutePath());
                 return;
-            } catch (DownloadCancelledException e) {
+            } catch (DownloadCancelledException | InterruptedException e) {
+                task.setCurrentProcess(null);
                 cleanup(videoFile, audioFile);
                 task.setStatus(TaskStatus.CANCELLED);
                 task.setError("已取消");
                 task.setFinishedAt(System.currentTimeMillis());
                 return;
             } catch (QualityPermissionException e) {
+                task.setCurrentProcess(null);
                 cleanup(videoFile, audioFile);
                 task.setStatus(TaskStatus.FAILED);
                 task.setError("画质权限不足: " + e.getMessage() + "（请配置大会员 Cookie）");
