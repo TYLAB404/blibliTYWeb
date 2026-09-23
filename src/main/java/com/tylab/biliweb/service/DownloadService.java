@@ -47,15 +47,18 @@ public class DownloadService {
     private final BiliApiClient apiClient;
     private final FfmpegUtil ffmpegUtil;
     private final String downloadDir;
+    private final int autoCleanHours;
 
     private final Map<String, DownloadTask> tasks = new ConcurrentHashMap<>();
     private final ExecutorService executor;
 
     public DownloadService(BiliApiClient apiClient, FfmpegUtil ffmpegUtil,
-                           @Value("${app.download-dir:./downloads}") String downloadDir) {
+                           @Value("${app.download-dir:./downloads}") String downloadDir,
+                           @Value("${app.auto-clean-hours:24}") int autoCleanHours) {
         this.apiClient = apiClient;
         this.ffmpegUtil = ffmpegUtil;
         this.downloadDir = downloadDir;
+        this.autoCleanHours = autoCleanHours;
         this.executor = Executors.newFixedThreadPool(2, new ThreadFactory() {
             private final AtomicLong n = new AtomicLong();
             @Override
@@ -129,7 +132,55 @@ public class DownloadService {
         map.put("usableBytes", dir.getUsableSpace());
         map.put("usableFormatted", formatSize(dir.getUsableSpace()));
         map.put("downloadDir", dir.getAbsolutePath());
+        map.put("autoCleanHours", autoCleanHours);
         return map;
+    }
+
+    /**
+     * 定时自动清理过期任务与已下载文件（按 app.auto-clean-hours 配置，默认 24 小时）
+     * 启动后 1 分钟执行初次检查，之后每 30 分钟检查一次
+     */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelay = 60_000, fixedDelay = 1800_000)
+    public void autoCleanExpiredTasks() {
+        if (autoCleanHours <= 0) return;
+        long threshold = System.currentTimeMillis() - autoCleanHours * 3600_000L;
+        int cleanedCount = 0;
+        List<String> toClean = new ArrayList<>();
+        for (DownloadTask t : tasks.values()) {
+            if (t.getStatus() == TaskStatus.COMPLETED
+                    || t.getStatus() == TaskStatus.FAILED
+                    || t.getStatus() == TaskStatus.CANCELLED) {
+                long finishedTime = t.getFinishedAt() > 0 ? t.getFinishedAt() : t.getCreatedAt();
+                if (finishedTime < threshold) {
+                    toClean.add(t.getId());
+                }
+            }
+        }
+        for (String id : toClean) {
+            if (deleteTask(id, true)) {
+                cleanedCount++;
+            }
+        }
+        cleanEmptyDirs(new File(downloadDir));
+        if (cleanedCount > 0) {
+            log.info("已自动清理 {} 个过期历史下载任务（保留策略: {} 小时）", cleanedCount, autoCleanHours);
+        }
+    }
+
+    /** 递归清理空文件夹 */
+    private void cleanEmptyDirs(File dir) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return;
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (child.isDirectory()) {
+                cleanEmptyDirs(child);
+                File[] remaining = child.listFiles();
+                if (remaining != null && remaining.length == 0) {
+                    child.delete();
+                }
+            }
+        }
     }
 
     /** 预检/自动回退：若请求画质超过可用最高画质，在 autoFallback 为 true 时降级，否则拒绝 */

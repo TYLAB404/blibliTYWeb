@@ -378,7 +378,9 @@ async function fetchStorage() {
     const r = await apiFetch('/api/system/storage');
     if (r.ok) {
       const data = await r.json();
-      document.getElementById('storageText').textContent = '盘余: ' + data.usableFormatted;
+      let policy = data.autoCleanHours > 0 ? ` · 保留${data.autoCleanHours}h` : '';
+      document.getElementById('storageText').textContent = '盘余: ' + data.usableFormatted + policy;
+      document.getElementById('storageBadge').title = `下载目录: ${data.downloadDir}\n自动清理策略：已开启，超过 ${data.autoCleanHours} 小时的已下载文件将自动删除释放磁盘`;
     }
   } catch (e) {}
 }

@@ -14,6 +14,8 @@ app:
   cookie-admin-token: "sha256:biliweb_salt:89654fb6011cb34a00172019bcbf97f0b2188ab53aa845d90d6ab773f3daa9f2"
   # 全局访问保护口令（可选，配置后访问解析与下载 API 需鉴权；留空则任何人可使用，适用于内网或受信环境）
   access-token: ""
+  # 已完成/历史下载文件自动清理保留时间（小时），超过此时间的文件和记录将自动删除释放磁盘；填 0 表示不自动清理
+  auto-clean-hours: 24
 
 spring:
   jackson:
