@@ -7,3 +7,4 @@ tools/
 *.iml
 .vscode/
 .DS_Store
+release/
