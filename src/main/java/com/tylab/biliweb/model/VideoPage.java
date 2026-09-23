@@ -6,6 +6,7 @@ public class VideoPage {
     private int page;
     private String part;
     private long duration; // 秒
+    private String bvid;
 
     public long getCid() { return cid; }
     public void setCid(long cid) { this.cid = cid; }
@@ -15,4 +16,6 @@ public class VideoPage {
     public void setPart(String part) { this.part = part; }
     public long getDuration() { return duration; }
     public void setDuration(long duration) { this.duration = duration; }
+    public String getBvid() { return bvid; }
+    public void setBvid(String bvid) { this.bvid = bvid; }
 }

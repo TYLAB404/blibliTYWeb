@@ -75,12 +75,14 @@ public class DownloadController {
         for (Map<String, Object> p : pages) {
             Number cid = (Number) p.get("cid");
             if (cid == null) continue;
+            String itemBvid = (String) p.get("bvid");
+            if (itemBvid == null || itemBvid.isEmpty()) itemBvid = bvid;
             String part = (String) p.get("part");
             Number pageNum = (Number) p.get("page");
             String pagePart = pageNum != null ? "P" + pageNum : "P1";
             String pageTitle = part != null && !part.isEmpty() ? part : pagePart;
             try {
-                DownloadTask t = downloadService.createTask(bvid, cid.longValue(), quality.intValue(),
+                DownloadTask t = downloadService.createTask(itemBvid, cid.longValue(), quality.intValue(),
                         videoTitle, pageTitle, pagePart, audioOnly, autoFallback);
                 created.add(t);
             } catch (Exception e) {

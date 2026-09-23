@@ -9,6 +9,7 @@ public class VideoInfo {
     private String title;
     private String cover;
     private List<VideoPage> pages;
+    private Integer defaultPageIndex;
 
     public String getBvid() { return bvid; }
     public void setBvid(String bvid) { this.bvid = bvid; }
@@ -20,4 +21,6 @@ public class VideoInfo {
     public void setCover(String cover) { this.cover = cover; }
     public List<VideoPage> getPages() { return pages; }
     public void setPages(List<VideoPage> pages) { this.pages = pages; }
+    public Integer getDefaultPageIndex() { return defaultPageIndex; }
+    public void setDefaultPageIndex(Integer defaultPageIndex) { this.defaultPageIndex = defaultPageIndex; }
 }

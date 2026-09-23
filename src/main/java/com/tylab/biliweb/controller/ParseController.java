@@ -24,16 +24,22 @@ public class ParseController {
         this.apiClient = apiClient;
     }
 
-    /** 解析 B 站链接/文本，返回视频信息与分P 列表 */
+    /** 解析 B 站链接/文本，返回视频或番剧信息与分P 列表 */
     @PostMapping("/parse")
     public VideoInfo parse(@RequestBody Map<String, String> body) {
         String input = body.get("url");
         if (input == null || input.trim().isEmpty()) {
-            throw new IllegalArgumentException("请输入视频链接");
+            throw new IllegalArgumentException("请输入视频或番剧链接");
         }
         BiliApiClient.LinkResult link = apiClient.resolveLink(input);
         if (link == null) {
-            throw new IllegalArgumentException("无法识别链接中的视频编号（支持 BV/av 号、完整链接、b23.tv 短链）");
+            throw new IllegalArgumentException("无法识别链接中的视频或番剧编号（支持 BV/av 号、番剧 ss/ep 号、完整链接、Markdown 与 b23.tv 短链）");
+        }
+        if (link.seasonId != null) {
+            return apiClient.getVideoInfoBySeasonId(link.seasonId);
+        }
+        if (link.epId != null) {
+            return apiClient.getVideoInfoByEpId(link.epId);
         }
         if (link.aid != null) {
             return apiClient.getVideoInfoByAid(link.aid);

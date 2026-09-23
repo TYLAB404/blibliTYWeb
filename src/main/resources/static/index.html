@@ -291,10 +291,10 @@
   <!-- 链接解析卡片 -->
   <div class="card">
     <div class="input-row">
-      <input id="urlInput" placeholder="粘贴 B 站视频链接，如 https://www.bilibili.com/video/BVxxxxxxxxxx" />
-      <button class="btn" id="parseBtn" onclick="parse()">解析视频</button>
+      <input id="urlInput" placeholder="粘贴 B 站视频或番剧链接，如 https://www.bilibili.com/bangumi/play/ss... 或 BV..." />
+      <button class="btn" id="parseBtn" onclick="parse()">解析内容</button>
     </div>
-    <div class="hint">支持 BV 号 / av 号 / 完整链接 / b23.tv 短链 / 手机端分享链接（含多分P自动提取）</div>
+    <div class="hint">支持 BV/av 号、番剧影视（ss/ep 号）、完整链接、网页与 Markdown 标题链接、b23.tv 短链（自动解析多分P与整季番剧）</div>
     <div id="parseErr" class="err-msg"></div>
 
     <!-- 视频详情与下载控制 -->
@@ -573,6 +573,10 @@ async function parse() {
       sel.appendChild(opt);
     });
 
+    if (data.defaultPageIndex != null && data.defaultPageIndex < (data.pages || []).length) {
+      sel.value = data.defaultPageIndex;
+    }
+
     // 多P批量面板
     const batchPanel = document.getElementById('batchPanel');
     if (data.pages && data.pages.length > 1) {
@@ -588,7 +592,7 @@ async function parse() {
   } catch (e) {
     err.textContent = '网络错误: ' + e.message;
   } finally {
-    btn.disabled = false; btn.textContent = '解析视频';
+    btn.disabled = false; btn.textContent = '解析内容';
   }
 }
 
@@ -628,12 +632,14 @@ function updateSelectedCount() {
 
 /* 加载画质列表 */
 async function loadFormats() {
-  if (!currentVideo) return;
-  const page = currentVideo.pages[document.getElementById('pageSelect').value];
+  if (!currentVideo || !currentVideo.pages || currentVideo.pages.length === 0) return;
+  const pageIdx = document.getElementById('pageSelect').value;
+  const page = currentVideo.pages[pageIdx] || currentVideo.pages[0];
+  const targetBvid = page.bvid || currentVideo.bvid;
   const sel = document.getElementById('formatSelect');
   sel.innerHTML = '<option>加载中…</option>';
   try {
-    const resp = await apiFetch('/api/formats?bvid=' + encodeURIComponent(currentVideo.bvid) + '&cid=' + page.cid);
+    const resp = await apiFetch('/api/formats?bvid=' + encodeURIComponent(targetBvid) + '&cid=' + page.cid);
     const data = await resp.json();
     if (!resp.ok) { sel.innerHTML = ''; return; }
     sel.innerHTML = '';
@@ -650,13 +656,15 @@ async function loadFormats() {
 
 /* 单P下载 */
 async function startDownload() {
-  if (!currentVideo) return;
-  const page = currentVideo.pages[document.getElementById('pageSelect').value];
+  if (!currentVideo || !currentVideo.pages || currentVideo.pages.length === 0) return;
+  const pageIdx = document.getElementById('pageSelect').value;
+  const page = currentVideo.pages[pageIdx] || currentVideo.pages[0];
+  const targetBvid = page.bvid || currentVideo.bvid;
   const mode = document.getElementById('modeSelect').value;
   const audioOnly = mode === 'audio';
   const quality = audioOnly ? 16 : parseInt(document.getElementById('formatSelect').value, 10);
   const body = {
-    bvid: currentVideo.bvid,
+    bvid: targetBvid,
     cid: page.cid,
     quality: quality,
     audioOnly: audioOnly,
@@ -685,7 +693,7 @@ async function startBatchDownload() {
   if (!currentVideo) return;
   const checkedNodes = Array.from(document.querySelectorAll('.batch-ck:checked'));
   if (checkedNodes.length === 0) {
-    alert('请先勾选需要下载的分P！');
+    alert('请先勾选需要下载的分集！');
     return;
   }
   const mode = document.getElementById('modeSelect').value;
@@ -695,7 +703,12 @@ async function startBatchDownload() {
   const pages = checkedNodes.map(ck => {
     const idx = parseInt(ck.getAttribute('data-idx'), 10);
     const p = currentVideo.pages[idx];
-    return { cid: p.cid, page: p.page, part: p.part };
+    return {
+      bvid: p.bvid || currentVideo.bvid,
+      cid: p.cid,
+      page: p.page,
+      part: p.part
+    };
   });
 
   const btn = document.getElementById('batchDlBtn');
@@ -715,7 +728,7 @@ async function startBatchDownload() {
     });
     const data = await resp.json();
     if (!resp.ok) { alert(data.error || '批量下载失败'); return; }
-    alert('已成功将 ' + data.length + ' 个分P加入下载队列！');
+    alert('已成功将 ' + data.length + ' 个分集加入下载队列！');
     refreshTasks();
     startSmartPolling(true);
   } catch (e) {

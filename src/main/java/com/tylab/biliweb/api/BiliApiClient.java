@@ -147,9 +147,96 @@ public class BiliApiClient {
             page.setPage(p.path("page").asInt());
             page.setPart(p.path("part").asText());
             page.setDuration(p.path("duration").asLong());
+            page.setBvid(info.getBvid());
             pages.add(page);
         }
         info.setPages(pages);
+        return info;
+    }
+
+    /** 通过 season_id 获取番剧/影视信息 */
+    public VideoInfo getVideoInfoBySeasonId(long seasonId) {
+        String url = "https://api.bilibili.com/pgc/view/web/season?season_id=" + seasonId;
+        JsonNode result = getJson(url, true);
+        return buildBangumiInfo(result, null);
+    }
+
+    /** 通过 ep_id 获取番剧/影视信息，并记录默认选中的分集 */
+    public VideoInfo getVideoInfoByEpId(long epId) {
+        String url = "https://api.bilibili.com/pgc/view/web/season?ep_id=" + epId;
+        JsonNode result = getJson(url, true);
+        return buildBangumiInfo(result, epId);
+    }
+
+    private VideoInfo buildBangumiInfo(JsonNode result, Long targetEpId) {
+        if (result == null || result.isMissingNode() || result.isNull()) {
+            throw new BiliApiException("获取番剧信息失败，未找到该番剧数据");
+        }
+        VideoInfo info = new VideoInfo();
+        info.setTitle(result.path("title").asText(""));
+        info.setCover(result.path("cover").asText(""));
+
+        List<VideoPage> pages = new ArrayList<>();
+        JsonNode episodes = result.path("episodes");
+        if ((!episodes.isArray() || episodes.isEmpty()) && result.has("section")) {
+            for (JsonNode sec : result.path("section")) {
+                JsonNode secEps = sec.path("episodes");
+                if (secEps.isArray() && secEps.size() > 0) {
+                    episodes = secEps;
+                    break;
+                }
+            }
+        }
+
+        int targetIdx = 0;
+        int idx = 0;
+        String firstBvid = "";
+        long firstAid = 0L;
+
+        for (JsonNode ep : episodes) {
+            VideoPage page = new VideoPage();
+            page.setCid(ep.path("cid").asLong());
+            page.setPage(idx + 1);
+            String epBvid = ep.path("bvid").asText("");
+            long epAid = ep.path("aid").asLong();
+            page.setBvid(epBvid);
+
+            if (firstBvid.isEmpty() && !epBvid.isEmpty()) {
+                firstBvid = epBvid;
+                firstAid = epAid;
+            }
+
+            // 分集标题优先使用 show_title（例如 "第1话 告白"），若无则拼接 title + long_title
+            String showTitle = ep.path("show_title").asText("");
+            if (showTitle.isEmpty()) {
+                String t = ep.path("title").asText("");
+                String lt = ep.path("long_title").asText("");
+                showTitle = lt.isEmpty() ? t : (t.isEmpty() ? lt : (t + " " + lt));
+            }
+            if (showTitle.isEmpty()) {
+                showTitle = "P" + (idx + 1);
+            }
+            page.setPart(showTitle);
+
+            long durMs = ep.path("duration").asLong(0L);
+            page.setDuration(durMs > 1000 ? durMs / 1000 : durMs);
+
+            long curEpId = ep.path("ep_id").asLong(0L);
+            if (targetEpId != null && curEpId == targetEpId) {
+                targetIdx = idx;
+                info.setBvid(epBvid);
+                info.setAid(epAid);
+            }
+            pages.add(page);
+            idx++;
+        }
+
+        if (info.getBvid() == null || info.getBvid().isEmpty()) {
+            info.setBvid(firstBvid);
+            info.setAid(firstAid);
+        }
+        info.setPages(pages);
+        info.setDefaultPageIndex(targetIdx);
         return info;
     }
 
@@ -260,6 +347,9 @@ public class BiliApiClient {
                 }
                 throw new BiliApiException(code, msg);
             }
+            if (root.has("result")) {
+                return root.path("result");
+            }
             return root.path("data");
         } catch (IOException e) {
             throw new BiliApiException("网络请求失败: " + e.getMessage());
@@ -313,15 +403,17 @@ public class BiliApiClient {
         }
     }
 
-    /** 从 B 站链接/文本中提取 BV 号或 aid（含 b23.tv 短链跟随跳转） */
+    /** 从 B 站链接/文本中提取 BV 号、av 号、番剧 ss/ep 号（含 b23.tv 短链跟随跳转与 Markdown 清洗） */
     public LinkResult resolveLink(String input) {
         if (input == null) return null;
         String text = input.trim();
-        // 手机端分享格式：去掉标题前缀（如【哔哩哔哩】、视频标题等）
+        // 手机端分享格式 / Markdown 格式：提取其中的 URL 并清洗末尾多余标点
         java.util.regex.Matcher urlMatcher = java.util.regex.Pattern
                 .compile("https?://[^\\s，,]+", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
         if (urlMatcher.find()) {
             String url = urlMatcher.group();
+            // 清理末尾因 Markdown 格式带来的右括号、右方括号等，如 [title](https://.../ss6312)
+            url = url.replaceAll("[)\\]>\"'\\s]+$", "");
             // b23.tv / bilibili.tv 短链：跟随跳转取最终 URL
             if (url.matches("(?i)https?://(?:b23\\.tv|bilibili\\.tv)/.*")) {
                 String resolved = followRedirect(url);
@@ -359,14 +451,27 @@ public class BiliApiClient {
         }
     }
 
-    /** 从文本中提取 BV 号或 aid */
+    /** 从文本或 URL 中提取视频编号（BV、av、番剧 ss、番剧 ep） */
     public static LinkResult parseLink(String input) {
         if (input == null) return null;
-        java.util.regex.Matcher bv = java.util.regex.Pattern.compile("BV[0-9A-Za-z]{10}").matcher(input);
+        String s = input.trim();
+        // 1. 匹配 BV 号 (BV1xx...)
+        java.util.regex.Matcher bv = java.util.regex.Pattern.compile("BV[0-9A-Za-z]{10}").matcher(s);
         if (bv.find()) {
             return new LinkResult(bv.group(), null);
         }
-        java.util.regex.Matcher av = java.util.regex.Pattern.compile("(?i)(?:av|aid=)(\\d+)").matcher(input);
+        // 2. 匹配番剧 ep 号 (ep123456, /play/ep123456, ep_id=123456)
+        java.util.regex.Matcher ep = java.util.regex.Pattern.compile("(?i)(?:/play/ep|/ep|ep_id=|\\bep)(\\d+)").matcher(s);
+        if (ep.find()) {
+            return new LinkResult(null, null, null, Long.parseLong(ep.group(1)));
+        }
+        // 3. 匹配番剧 ss 号 (ss3542, ss6312, /play/ss3542, season_id=3542)
+        java.util.regex.Matcher ss = java.util.regex.Pattern.compile("(?i)(?:/play/ss|/ss|season_id=|\\bss)(\\d+)").matcher(s);
+        if (ss.find()) {
+            return new LinkResult(null, null, Long.parseLong(ss.group(1)), null);
+        }
+        // 4. 匹配 av / aid 号 (av123456, aid=123456)
+        java.util.regex.Matcher av = java.util.regex.Pattern.compile("(?i)(?:/video/av|aid=|\\bav)(\\d+)").matcher(s);
         if (av.find()) {
             return new LinkResult(null, Long.parseLong(av.group(1)));
         }
@@ -457,13 +562,22 @@ public class BiliApiClient {
         }
     }
 
-    /** 链接解析结果 */
+    /** 链接解析结果（支持普通视频 BV/av 与番剧影视 ss/ep） */
     public static class LinkResult {
         public final String bvid;
         public final Long aid;
+        public final Long seasonId;
+        public final Long epId;
+
         public LinkResult(String bvid, Long aid) {
+            this(bvid, aid, null, null);
+        }
+
+        public LinkResult(String bvid, Long aid, Long seasonId, Long epId) {
             this.bvid = bvid;
             this.aid = aid;
+            this.seasonId = seasonId;
+            this.epId = epId;
         }
     }
 }
