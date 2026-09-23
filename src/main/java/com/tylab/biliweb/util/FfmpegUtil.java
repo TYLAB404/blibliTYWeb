@@ -24,9 +24,19 @@ public class FfmpegUtil {
             File f = new File(configuredPath);
             if (f.exists()) return f.getAbsolutePath();
         }
+        // 常见系统路径直接探测（优先解决 Linux /usr/bin/ffmpeg）
+        for (String commonPath : new String[]{"/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "tools/ffmpeg", "tools/ffmpeg.exe"}) {
+            File f = new File(commonPath);
+            if (f.exists() && f.canExecute()) {
+                return f.getAbsolutePath();
+            }
+        }
+        // 根据操作系统选用 which (Linux/macOS) 或 where (Windows)
+        boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String locator = isWindows ? "where" : "which";
         for (String candidate : new String[]{"ffmpeg", "ffmpeg.exe"}) {
             try {
-                Process p = new ProcessBuilder("where", candidate).redirectErrorStream(true).start();
+                Process p = new ProcessBuilder(locator, candidate).redirectErrorStream(true).start();
                 String line = readFirstLine(p);
                 int exit = p.waitFor();
                 if (exit == 0 && line != null && !line.trim().isEmpty()) {
@@ -34,6 +44,15 @@ public class FfmpegUtil {
                 }
             } catch (Exception ignored) {
             }
+        }
+        // 终极保底：直接验证系统 PATH 中能否运行 ffmpeg -version
+        try {
+            Process p = new ProcessBuilder("ffmpeg", "-version").redirectErrorStream(true).start();
+            int exit = p.waitFor();
+            if (exit == 0) {
+                return "ffmpeg";
+            }
+        } catch (Exception ignored) {
         }
         return null;
     }
