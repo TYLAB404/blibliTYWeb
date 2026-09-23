@@ -39,14 +39,28 @@ public class CookieAdminService {
             File f = new File(cookieFilePath);
             if (f.exists()) {
                 JsonNode root = mapper.readTree(f);
-                String cookie = root.path("cookie").asText("");
-                if (!cookie.isEmpty()) {
-                    apiClient.setCookie(cookie);
-                    log.info("已从 {} 加载 Cookie 配置", cookieFilePath);
+                String plainCookie = "";
+                // 优先读取 AES-256-GCM 加密密文
+                if (root.has("encrypted")) {
+                    String cipher = root.path("encrypted").asText("");
+                    if (!cipher.isEmpty()) {
+                        plainCookie = com.tylab.biliweb.util.SecurityUtil.decryptAesGcm(cipher, adminToken);
+                        log.info("已从 {} 解密加载 Cookie 配置", cookieFilePath);
+                    }
+                } else if (root.has("cookie")) {
+                    // 兼容旧版明文格式：自动升级为密文存储，消除磁盘明文残留
+                    plainCookie = root.path("cookie").asText("");
+                    if (!plainCookie.isEmpty()) {
+                        log.info("检测到未加密的 Cookie 文件，正在自动升级为 AES-256-GCM 密文存储...");
+                        saveEncryptedToFile(plainCookie);
+                    }
+                }
+                if (!plainCookie.isEmpty()) {
+                    apiClient.setCookie(plainCookie);
                 }
             }
-        } catch (IOException e) {
-            log.warn("读取 Cookie 配置文件失败: {}", e.getMessage());
+        } catch (Exception e) {
+            log.warn("读取或解密 Cookie 配置文件失败: {}", e.getMessage());
         }
     }
 
@@ -59,7 +73,7 @@ public class CookieAdminService {
         return !adminToken.isEmpty();
     }
 
-    /** 保存 Cookie：先校验有效性，通过后写入文件并立即生效 */
+    /** 保存 Cookie：先校验有效性，通过后以 AES-256-GCM 加密写入文件并立即生效 */
     public CookieStatus saveCookie(String cookie) throws IOException {
         String trimmed = cookie == null ? "" : cookie.trim();
         if (trimmed.isEmpty()) {
@@ -73,20 +87,26 @@ public class CookieAdminService {
         if (!login.isLogin) {
             throw new IllegalArgumentException("Cookie 无效或已过期，请重新登录 B 站后复制");
         }
-        // 写入文件
+        // 加密写入文件（绝证明文落地）
+        saveEncryptedToFile(trimmed);
+        // 立即生效
+        apiClient.setCookie(trimmed);
+        log.info("Cookie 已加密持久化并生效（账号: {}）", login.uname);
+        return buildStatus(true, login);
+    }
+
+    /** 将 Cookie 以 AES-256-GCM 密文写入磁盘 */
+    private void saveEncryptedToFile(String plainCookie) throws IOException {
         File f = new File(cookieFilePath);
         File parent = f.getParentFile();
         if (parent != null && !parent.exists()) {
             parent.mkdirs();
         }
+        String encrypted = com.tylab.biliweb.util.SecurityUtil.encryptAesGcm(plainCookie, adminToken);
         ObjectNode node = mapper.createObjectNode();
-        node.put("cookie", trimmed);
+        node.put("encrypted", encrypted);
         node.put("updatedAt", System.currentTimeMillis());
         mapper.writeValue(f, node);
-        // 立即生效
-        apiClient.setCookie(trimmed);
-        log.info("Cookie 已更新并生效（账号: {}）", login.uname);
-        return buildStatus(true, login);
     }
 
     /** 当前 Cookie 状态（脱敏，不含明文） */

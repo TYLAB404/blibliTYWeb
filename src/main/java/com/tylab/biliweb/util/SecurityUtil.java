@@ -60,4 +60,75 @@ public class SecurityUtil {
             throw new RuntimeException("SHA-256 算法不可用", e);
         }
     }
+
+    private static final String AES_ALGO = "AES/GCM/NoPadding";
+    private static final int GCM_IV_LENGTH = 12;
+    private static final int GCM_TAG_LENGTH = 128;
+
+    /**
+     * 使用 AES-256-GCM 认证加密 Cookie 等私密文本
+     *
+     * @param plaintext 明文
+     * @param secretSeed 密钥种子（如管理员口令哈希）
+     * @return Base64 编码的密文（包含 IV 与 Tag）
+     */
+    public static String encryptAesGcm(String plaintext, String secretSeed) {
+        if (plaintext == null || plaintext.isEmpty()) return "";
+        try {
+            byte[] keyBytes = deriveKey(secretSeed);
+            javax.crypto.spec.SecretKeySpec keySpec = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            new java.security.SecureRandom().nextBytes(iv);
+            javax.crypto.spec.GCMParameterSpec spec = new javax.crypto.spec.GCMParameterSpec(GCM_TAG_LENGTH, iv);
+
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(AES_ALGO);
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, keySpec, spec);
+            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+
+            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(iv.length + ciphertext.length);
+            buffer.put(iv);
+            buffer.put(ciphertext);
+            return java.util.Base64.getEncoder().encodeToString(buffer.array());
+        } catch (Exception e) {
+            throw new RuntimeException("AES-GCM 加密失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 使用 AES-256-GCM 解密密文
+     *
+     * @param ciphertextBase64 Base64 编码密文
+     * @param secretSeed 密钥种子
+     * @return 解密后的明文
+     */
+    public static String decryptAesGcm(String ciphertextBase64, String secretSeed) {
+        if (ciphertextBase64 == null || ciphertextBase64.isEmpty()) return "";
+        try {
+            byte[] keyBytes = deriveKey(secretSeed);
+            javax.crypto.spec.SecretKeySpec keySpec = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+            byte[] raw = java.util.Base64.getDecoder().decode(ciphertextBase64);
+            if (raw.length <= GCM_IV_LENGTH) {
+                throw new IllegalArgumentException("密文长度非法");
+            }
+            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(raw);
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            buffer.get(iv);
+            byte[] ciphertext = new byte[buffer.remaining()];
+            buffer.get(ciphertext);
+
+            javax.crypto.spec.GCMParameterSpec spec = new javax.crypto.spec.GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(AES_ALGO);
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, keySpec, spec);
+            byte[] decrypted = cipher.doFinal(ciphertext);
+            return new String(decrypted, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("AES-GCM 解密失败: " + e.getMessage(), e);
+        }
+    }
+
+    private static byte[] deriveKey(String seed) throws NoSuchAlgorithmException {
+        String base = (seed == null || seed.trim().isEmpty()) ? "biliweb_default_device_salt_2026" : seed.trim();
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        return md.digest(("bili_cookie_key_seed:" + base).getBytes(StandardCharsets.UTF_8));
+    }
 }
