@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
 <title>Bili Web 下载器</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -207,7 +208,7 @@
     <!-- 视频详情与下载控制 -->
     <div id="videoInfo" style="display:none">
       <div class="video-info">
-        <img id="cover" src="" alt="cover" />
+        <img id="cover" src="" alt="cover" referrerpolicy="no-referrer" onerror="onCoverError(this)" />
         <div class="meta">
           <h2 id="vtitle"></h2>
           <!-- 单 P 下载区 -->
@@ -402,7 +403,13 @@ async function parse() {
     const data = await resp.json();
     if (!resp.ok) { err.textContent = data.error || '解析失败'; return; }
     currentVideo = data;
-    document.getElementById('cover').src = data.cover || '';
+    const coverImg = document.getElementById('cover');
+    coverImg.dataset.retried = '';
+    let coverUrl = data.cover || '';
+    if (coverUrl.startsWith('http://')) {
+      coverUrl = 'https://' + coverUrl.substring(7);
+    }
+    coverImg.src = coverUrl;
     document.getElementById('vtitle').textContent = data.title;
     
     // 单P下拉列表
@@ -431,6 +438,15 @@ async function parse() {
     err.textContent = '网络错误: ' + e.message;
   } finally {
     btn.disabled = false; btn.textContent = '解析视频';
+  }
+}
+
+/* 封面防盗链自动代理降级 */
+function onCoverError(img) {
+  if (img.dataset.retried) return;
+  img.dataset.retried = '1';
+  if (img.src && !img.src.includes('/api/proxy/image')) {
+    img.src = '/api/proxy/image?url=' + encodeURIComponent(img.src);
   }
 }
 

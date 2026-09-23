@@ -17,6 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.File;
 import java.net.URLEncoder;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.util.EntityUtils;
+import org.springframework.http.HttpStatus;
+
 import java.util.List;
 import java.util.Map;
 
@@ -26,9 +30,11 @@ import java.util.Map;
 public class DownloadController {
 
     private final DownloadService downloadService;
+    private final com.tylab.biliweb.api.BiliApiClient apiClient;
 
-    public DownloadController(DownloadService downloadService) {
+    public DownloadController(DownloadService downloadService, com.tylab.biliweb.api.BiliApiClient apiClient) {
         this.downloadService = downloadService;
+        this.apiClient = apiClient;
     }
 
     /** 创建下载任务 */
@@ -145,5 +151,36 @@ public class DownloadController {
                 .contentLength(f.length())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(new FileSystemResource(f));
+    }
+
+    /** B 站封面图片防盗链代理（支持跨域、带 B 站 Referer，双重保险） */
+    @GetMapping("/proxy/image")
+    public ResponseEntity<byte[]> proxyImage(@org.springframework.web.bind.annotation.RequestParam String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            String host = uri.getHost();
+            if (host == null || (!host.endsWith(".hdslb.com") && !host.endsWith(".bilibili.com"))) {
+                return ResponseEntity.badRequest().build();
+            }
+            try (CloseableHttpResponse resp = apiClient.openStream(url, null)) {
+                int status = resp.getStatusLine().getStatusCode();
+                if (status != 200 || resp.getEntity() == null) {
+                    return ResponseEntity.status(status).build();
+                }
+                byte[] bytes = EntityUtils.toByteArray(resp.getEntity());
+                String contentType = resp.getEntity().getContentType() != null
+                        ? resp.getEntity().getContentType().getValue()
+                        : "image/jpeg";
+                return ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_TYPE, contentType)
+                        .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+                        .body(bytes);
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+        }
     }
 }
