@@ -50,9 +50,9 @@ public class CookieAdminService {
         }
     }
 
-    /** 校验管理口令 */
+    /** 校验管理口令（支持密文哈希比对） */
     public boolean verifyToken(String token) {
-        return !adminToken.isEmpty() && adminToken.equals(token);
+        return !adminToken.isEmpty() && com.tylab.biliweb.util.SecurityUtil.verifyToken(token, adminToken);
     }
 
     public boolean isTokenConfigured() {

@@ -24,7 +24,7 @@ public class AccessAuthInterceptor implements HandlerInterceptor {
 
     public boolean verify(String token) {
         if (!isAuthRequired()) return true;
-        return accessToken.equals(token);
+        return com.tylab.biliweb.util.SecurityUtil.verifyToken(token, accessToken);
     }
 
     @Override

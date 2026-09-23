@@ -10,9 +10,8 @@ app:
   ffmpeg-path: ./tools/ffmpeg.exe
   # B 站 Cookie（可选，用于下载大会员/登录画质）；也可在页面用管理口令动态配置（存于 config/cookie.json）
   bilibili-cookie: ""
-  # Cookie 管理口令（必填，用于页面动态配置 Cookie 的鉴权；局域网内任意设备输入此口令即可配置）
-  # 注意：部署前请务必设置你自己的口令，不要留空
-  cookie-admin-token: ""
+  # Cookie 管理口令（采用加盐 SHA-256 哈希密文存储，不可逆，绝证明文泄露）
+  cookie-admin-token: "sha256:biliweb_salt:89654fb6011cb34a00172019bcbf97f0b2188ab53aa845d90d6ab773f3daa9f2"
   # 全局访问保护口令（可选，配置后访问解析与下载 API 需鉴权；留空则任何人可使用，适用于内网或受信环境）
   access-token: ""
 
