@@ -10,9 +10,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+
 import javax.annotation.PostConstruct;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.Base64;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.Map;
 
 /** Cookie 管理：独立文件存储、口令鉴权、有效性自检 */
 @Service
@@ -73,8 +84,13 @@ public class CookieAdminService {
         return !adminToken.isEmpty();
     }
 
-    /** 保存 Cookie：先校验有效性，通过后以 AES-256-GCM 加密写入文件并立即生效 */
+    /** 保存 Cookie：先校验有效性，通过后以 AES-256-GCM 加密写入文件并立即生效（默认手动模式） */
     public CookieStatus saveCookie(String cookie) throws IOException {
+        return saveCookie(cookie, "manual");
+    }
+
+    /** 保存 Cookie：支持指定配置类型（"qrcode" 扫码登录 或 "manual" 手动配置） */
+    public CookieStatus saveCookie(String cookie, String loginType) throws IOException {
         String trimmed = cookie == null ? "" : cookie.trim();
         if (trimmed.isEmpty()) {
             throw new IllegalArgumentException("Cookie 不能为空");
@@ -87,16 +103,17 @@ public class CookieAdminService {
         if (!login.isLogin) {
             throw new IllegalArgumentException("Cookie 无效或已过期，请重新登录 B 站后复制");
         }
+        String resolvedType = (loginType == null || loginType.isEmpty()) ? "manual" : loginType;
         // 加密写入文件（绝证明文落地）
-        saveEncryptedToFile(trimmed);
+        saveEncryptedToFile(trimmed, resolvedType);
         // 立即生效
         apiClient.setCookie(trimmed);
-        log.info("Cookie 已加密持久化并生效（账号: {}）", login.uname);
+        log.info("Cookie 已加密持久化并生效（方式: {}, 账号: {}）", resolvedType, login.uname);
         return buildStatus(true, login);
     }
 
-    /** 将 Cookie 以 AES-256-GCM 密文写入磁盘 */
-    private void saveEncryptedToFile(String plainCookie) throws IOException {
+    /** 将 Cookie 以 AES-256-GCM 密文写入磁盘（记录配置方式） */
+    private void saveEncryptedToFile(String plainCookie, String loginType) throws IOException {
         File f = new File(cookieFilePath);
         File parent = f.getParentFile();
         if (parent != null && !parent.exists()) {
@@ -105,8 +122,55 @@ public class CookieAdminService {
         String encrypted = com.tylab.biliweb.util.SecurityUtil.encryptAesGcm(plainCookie, adminToken);
         ObjectNode node = mapper.createObjectNode();
         node.put("encrypted", encrypted);
+        node.put("loginType", loginType != null ? loginType : "manual");
         node.put("updatedAt", System.currentTimeMillis());
         mapper.writeValue(f, node);
+    }
+
+    private void saveEncryptedToFile(String plainCookie) throws IOException {
+        saveEncryptedToFile(plainCookie, "manual");
+    }
+
+    /** 申请 B 站登录二维码（包含 Base64 图片数据，方便前端以 <img> 显示和长按保存） */
+    public Map<String, Object> generateLoginQrCode() {
+        BiliApiClient.QrCodeResult qr = apiClient.generateQrCode();
+        Map<String, Object> res = new HashMap<>();
+        res.put("url", qr.url);
+        res.put("qrcodeKey", qr.qrcodeKey);
+        try {
+            QRCodeWriter qrCodeWriter = new QRCodeWriter();
+            Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
+            hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+            hints.put(EncodeHintType.MARGIN, 1);
+            BitMatrix bitMatrix = qrCodeWriter.encode(qr.url, BarcodeFormat.QR_CODE, 200, 200, hints);
+            ByteArrayOutputStream pngOutputStream = new ByteArrayOutputStream();
+            MatrixToImageWriter.writeToStream(bitMatrix, "PNG", pngOutputStream);
+            byte[] pngData = pngOutputStream.toByteArray();
+            String base64Img = "data:image/png;base64," + Base64.getEncoder().encodeToString(pngData);
+            res.put("qrImgBase64", base64Img);
+        } catch (Exception e) {
+            log.warn("生成二维码 Base64 失败: {}", e.getMessage());
+        }
+        return res;
+    }
+
+    /** 轮询登录二维码状态（成功自动加密保存） */
+    public Map<String, Object> pollLoginQrCode(String qrcodeKey) {
+        BiliApiClient.QrPollResult result = apiClient.pollQrCode(qrcodeKey);
+        Map<String, Object> map = new java.util.HashMap<>();
+        map.put("code", result.code);
+        map.put("message", result.message);
+        if (result.code == 0 && result.cookie != null && !result.cookie.isEmpty()) {
+            try {
+                CookieStatus status = saveCookie(result.cookie, "qrcode");
+                map.put("status", status);
+                map.put("success", true);
+            } catch (Exception e) {
+                log.error("扫码成功但保存 Cookie 异常", e);
+                map.put("error", "保存 Cookie 失败: " + e.getMessage());
+            }
+        }
+        return map;
     }
 
     /** 当前 Cookie 状态（脱敏，不含明文） */
@@ -127,7 +191,22 @@ public class CookieAdminService {
         CookieStatus s = new CookieStatus();
         s.setConfigured(configured);
         File f = new File(cookieFilePath);
-        s.setUpdatedAt(f.exists() ? f.lastModified() : 0L);
+        long updateTime = f.exists() ? f.lastModified() : 0L;
+        String type = "manual";
+        if (f.exists()) {
+            try {
+                JsonNode root = mapper.readTree(f);
+                if (root.has("updatedAt")) {
+                    updateTime = root.path("updatedAt").asLong(updateTime);
+                }
+                if (root.has("loginType")) {
+                    type = root.path("loginType").asText("manual");
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        s.setUpdatedAt(updateTime);
+        s.setLoginType(type);
         if (login == null) {
             s.setValid(false);
             s.setMessage("无法连接 B 站进行验证，请稍后重试");

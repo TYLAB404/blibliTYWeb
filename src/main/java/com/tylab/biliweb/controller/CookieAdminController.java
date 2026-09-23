@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
@@ -52,6 +53,31 @@ public class CookieAdminController {
     @GetMapping("/cookie/token-configured")
     public Map<String, Object> tokenConfigured() {
         return Collections.singletonMap("configured", cookieAdminService.isTokenConfigured());
+    }
+
+    /** 申请登录二维码（含 Base64 图片） */
+    @PostMapping("/login/qrcode/generate")
+    public ResponseEntity<?> generateQrCode(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        if (!authorized(token)) return unauthorized();
+        try {
+            return ResponseEntity.ok(cookieAdminService.generateLoginQrCode());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "申请二维码失败: " + e.getMessage()));
+        }
+    }
+
+    /** 轮询登录二维码扫码状态（扫码成功自动加密保存） */
+    @GetMapping("/login/qrcode/poll")
+    public ResponseEntity<?> pollQrCode(@RequestHeader(value = "X-Admin-Token", required = false) String token,
+                                        @RequestParam("qrcodeKey") String qrcodeKey) {
+        if (!authorized(token)) return unauthorized();
+        try {
+            return ResponseEntity.ok(cookieAdminService.pollLoginQrCode(qrcodeKey));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "轮询失败: " + e.getMessage()));
+        }
     }
 
     private boolean authorized(String token) {

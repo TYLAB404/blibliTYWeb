@@ -381,6 +381,82 @@ public class BiliApiClient {
         }
     }
 
+    /** 申请登录二维码 */
+    public QrCodeResult generateQrCode() {
+        HttpGet request = new HttpGet("https://passport.bilibili.com/x/passport-login/web/qrcode/generate");
+        try (CloseableHttpResponse resp = httpClient.execute(request)) {
+            if (resp.getStatusLine().getStatusCode() != 200) {
+                throw new BiliApiException("申请二维码失败: HTTP " + resp.getStatusLine().getStatusCode());
+            }
+            JsonNode root = mapper.readTree(resp.getEntity().getContent());
+            if (root.path("code").asInt(-1) != 0) {
+                throw new BiliApiException("申请二维码失败: " + root.path("message").asText());
+            }
+            JsonNode data = root.path("data");
+            return new QrCodeResult(data.path("url").asText(""), data.path("qrcode_key").asText(""));
+        } catch (IOException e) {
+            throw new BiliApiException("申请二维码网络失败: " + e.getMessage());
+        }
+    }
+
+    /** 轮询扫码状态（成功时捕获 Set-Cookie 响应头） */
+    public QrPollResult pollQrCode(String qrcodeKey) {
+        String url = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=" + urlEncode(qrcodeKey);
+        HttpGet request = new HttpGet(url);
+        try (CloseableHttpResponse resp = httpClient.execute(request)) {
+            int status = resp.getStatusLine().getStatusCode();
+            if (status != 200) {
+                throw new BiliApiException("轮询二维码失败: HTTP " + status);
+            }
+            JsonNode root = mapper.readTree(resp.getEntity().getContent());
+            JsonNode data = root.path("data");
+            int subCode = data.path("code").asInt(-1);
+            String message = data.path("message").asText("");
+            String cookie = "";
+            if (subCode == 0) {
+                Header[] setCookies = resp.getHeaders("Set-Cookie");
+                StringBuilder sb = new StringBuilder();
+                if (setCookies != null) {
+                    for (Header h : setCookies) {
+                        String val = h.getValue();
+                        if (val != null) {
+                            int semi = val.indexOf(';');
+                            String pair = (semi >= 0 ? val.substring(0, semi) : val).trim();
+                            if (!pair.isEmpty()) {
+                                if (sb.length() > 0) sb.append("; ");
+                                sb.append(pair);
+                            }
+                        }
+                    }
+                }
+                cookie = sb.toString();
+            }
+            return new QrPollResult(subCode, message, cookie);
+        } catch (IOException e) {
+            throw new BiliApiException("轮询二维码网络异常: " + e.getMessage());
+        }
+    }
+
+    public static class QrCodeResult {
+        public final String url;
+        public final String qrcodeKey;
+        public QrCodeResult(String url, String qrcodeKey) {
+            this.url = url;
+            this.qrcodeKey = qrcodeKey;
+        }
+    }
+
+    public static class QrPollResult {
+        public final int code; // 0=成功, 86101=未扫码, 86090=已扫码未确认, 86038=已过期
+        public final String message;
+        public final String cookie;
+        public QrPollResult(int code, String message, String cookie) {
+            this.code = code;
+            this.message = message;
+            this.cookie = cookie;
+        }
+    }
+
     /** 链接解析结果 */
     public static class LinkResult {
         public final String bvid;

@@ -8,6 +8,7 @@ public class CookieStatus {
     private boolean vip;
     private String message;
     private long updatedAt;
+    private String loginType; // "qrcode" (扫码登录) 或 "manual" (手动配置)
 
     public boolean isConfigured() { return configured; }
     public void setConfigured(boolean configured) { this.configured = configured; }
@@ -21,4 +22,6 @@ public class CookieStatus {
     public void setMessage(String message) { this.message = message; }
     public long getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(long updatedAt) { this.updatedAt = updatedAt; }
+    public String getLoginType() { return loginType; }
+    public void setLoginType(String loginType) { this.loginType = loginType; }
 }
