@@ -64,13 +64,16 @@ jobs:
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
             echo "正在停止旧的进程..."
-            pkill -f 'bili-web-0.1.0.jar' || true
+            TARGET_PID=$(pgrep -f "java.*bili-web" | head -n 1)
+            if [ -n "$TARGET_PID" ]; then
+              kill -9 $TARGET_PID || true
+            fi
             sleep 2
             
             echo "正在后台启动新版本..."
             cd /www/wwwroot/bili-web
-            nohup java -jar bili-web-0.1.0.jar --app.ffmpeg-path=/usr/bin/ffmpeg > app.log 2>&1 &
-            sleep 2
+            nohup java -jar bili-web-0.1.0.jar --app.ffmpeg-path=/usr/bin/ffmpeg > app.log 2>&1 < /dev/null &
+            sleep 3
             
             echo "检查启动状态："
-            pgrep -f 'bili-web-0.1.0.jar' && echo "部署成功！" || echo "启动失败，请检查日志"
+            ps -ef | grep '[b]ili-web' && echo "部署成功！" || echo "启动失败，请检查日志"
