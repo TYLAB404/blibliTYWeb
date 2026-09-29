@@ -63,17 +63,32 @@ jobs:
           password: ${{ secrets.SERVER_PASS }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            echo "正在停止旧的进程..."
-            TARGET_PID=$(pgrep -f "java.*bili-web" | head -n 1)
-            if [ -n "$TARGET_PID" ]; then
-              kill -9 $TARGET_PID || true
+            APP_DIR="/www/wwwroot/bili-web"
+            PID_FILE="$APP_DIR/app.pid"
+            
+            echo "正在安全停止 bili-web 服务..."
+            if [ -f "$PID_FILE" ]; then
+              OLD_PID=$(cat "$PID_FILE")
+              if ps -p "$OLD_PID" > /dev/null 2>&1; then
+                kill -9 "$OLD_PID" || true
+              fi
+              rm -f "$PID_FILE"
+            else
+              # 首次部署兜底：释放 8080 端口旧进程
+              fuser -k 8080/tcp || true
             fi
             sleep 2
             
             echo "正在后台启动新版本..."
-            cd /www/wwwroot/bili-web
+            cd "$APP_DIR"
             nohup java -jar bili-web-0.1.0.jar --app.ffmpeg-path=/usr/bin/ffmpeg > app.log 2>&1 < /dev/null &
+            echo $! > "$PID_FILE"
             sleep 3
             
-            echo "检查启动状态："
-            ps -ef | grep '[b]ili-web' && echo "部署成功！" || echo "启动失败，请检查日志"
+            NEW_PID=$(cat "$PID_FILE")
+            if ps -p "$NEW_PID" > /dev/null 2>&1; then
+              echo "✅ 部署成功！项目独立运行中，PID: $NEW_PID"
+            else
+              echo "❌ 启动失败，请检查 app.log 日志"
+              exit 1
+            fi
