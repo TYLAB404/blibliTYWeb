@@ -905,26 +905,50 @@ function clearUrlInput() {
   input.focus();
 }
 
+/* 全局轻量 Toast 提示 */
+function showToast(msg, isError = false) {
+  let toast = document.getElementById('appToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'appToast';
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.88);color:#fff;padding:8px 18px;border-radius:20px;font-size:13px;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,0.15);z-index:9999;transition:all .25s ease;opacity:0;pointer-events:none;backdrop-filter:blur(4px);';
+    document.body.appendChild(toast);
+  }
+  toast.innerText = msg;
+  toast.style.background = isError ? 'rgba(239,68,68,0.92)' : 'rgba(15,23,42,0.88)';
+  toast.style.opacity = '1';
+  toast.style.bottom = '32px';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.bottom = '24px';
+  }, 2200);
+}
+
 async function pasteUrlInput() {
   const input = document.getElementById('urlInput');
-  try {
-    if (navigator.clipboard && navigator.clipboard.readText) {
+  input.focus();
+
+  // 1. 优先尝试现代 Clipboard API（在 HTTPS 或 localhost 下直接读取）
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    try {
       const text = await navigator.clipboard.readText();
-      if (text) {
+      if (text && text.trim()) {
         input.value = text.trim();
         onUrlInputChanged();
-        input.focus();
+        showToast('已成功粘贴剪贴板内容');
         return;
       }
+    } catch (e) {
+      console.warn('Clipboard read rejected:', e);
     }
-  } catch (e) {}
-  // 降级兜底方案
-  const text = prompt('请粘贴 B 站视频或番剧链接：');
-  if (text) {
-    input.value = text.trim();
-    onUrlInputChanged();
-    input.focus();
   }
+
+  // 2. 如果在明文 HTTP 下被浏览器底层安全策略拦截，绝不弹恶心的系统 prompt！
+  // 自动聚焦并选中输入框，给出轻量提示
+  input.select();
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  showToast(isMobile ? '浏览器已拦截自动读取，请长按输入框粘贴' : '浏览器已拦截自动读取，请按 Ctrl+V 粘贴', true);
 }
 
 /* 需求3：友情链接展示与管理 */
@@ -1336,7 +1360,7 @@ function renderTask(t) {
     </div>`;
   } else if (['WAITING','DOWNLOADING','MERGING'].includes(t.status)) {
     actions = `<div class="actions">
-      <button class="btn ghost sm" onclick="cancelTask('${t.id}')">取消</button>
+      <button class="btn ghost sm" onclick="cancelTask('${t.id}', this)">取消</button>
     </div>`;
   }
   
@@ -1378,9 +1402,20 @@ function renderTask(t) {
   </div>`;
 }
 
-async function cancelTask(id) {
-  await apiFetch('/api/task/' + id + '/cancel', { method: 'POST' });
-  refreshTasks();
+async function cancelTask(id, btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = '正在取消…';
+    btn.style.opacity = '0.6';
+    btn.style.pointerEvents = 'none';
+  }
+  showToast('正在终止下载任务…');
+  try {
+    await apiFetch('/api/task/' + id + '/cancel', { method: 'POST' });
+  } catch (e) {
+    console.error('Cancel task failed:', e);
+  }
+  setTimeout(refreshTasks, 150);
 }
 
 async function deleteTask(id) {

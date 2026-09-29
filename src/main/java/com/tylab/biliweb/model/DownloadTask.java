@@ -36,6 +36,14 @@ public class DownloadTask implements Runnable {
     @JsonIgnore
     private volatile Process currentProcess;
 
+    // 当前关联的网络流对象（用于取消时秒级切断 TCP 连接，解除 read 阻塞）
+    @JsonIgnore
+    private volatile java.io.Closeable currentStream;
+
+    // 当前执行任务的工作线程（用于取消时打断休眠/等待）
+    @JsonIgnore
+    private volatile Thread workerThread;
+
     @JsonIgnore
     private long lastSampleTime = 0;
     @JsonIgnore
@@ -76,10 +84,54 @@ public class DownloadTask implements Runnable {
     public boolean isCancelled() { return cancelled.get(); }
     public void cancel() {
         cancelled.set(true);
+        this.status = TaskStatus.CANCELLED;
+        this.stage = "已取消";
+        this.error = "已取消";
+        this.finishedAt = System.currentTimeMillis();
+
+        // 1. 瞬间切断正在读取的网络流，使阻塞的 socket read 毫秒级断开
+        java.io.Closeable s = this.currentStream;
+        if (s != null) {
+            try {
+                s.close();
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 2. 若正在进行 ffmpeg 合并，立刻强行杀死子进程
         Process p = this.currentProcess;
         if (p != null) {
             try {
                 p.destroyForcibly();
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 3. 打断执行线程可能处于的休眠或等待
+        Thread t = this.workerThread;
+        if (t != null && t.isAlive()) {
+            try {
+                t.interrupt();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    public void setCurrentStream(java.io.Closeable currentStream) {
+        this.currentStream = currentStream;
+        if (cancelled.get() && currentStream != null) {
+            try {
+                currentStream.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    public void setWorkerThread(Thread workerThread) {
+        this.workerThread = workerThread;
+        if (cancelled.get() && workerThread != null) {
+            try {
+                workerThread.interrupt();
             } catch (Exception ignored) {
             }
         }

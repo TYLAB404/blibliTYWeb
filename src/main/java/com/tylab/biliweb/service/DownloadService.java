@@ -270,6 +270,7 @@ public class DownloadService {
 
     /** 任务主流程（含网络错误自动重试） */
     private void execute(DownloadTask task) {
+        task.setWorkerThread(Thread.currentThread());
         int attempts = 0;
         while (true) {
             File dir = prepareDir(task);
@@ -368,6 +369,15 @@ public class DownloadService {
                 task.setFinishedAt(System.currentTimeMillis());
                 return;
             } catch (Exception e) {
+                if (task.isCancelled()) {
+                    task.setCurrentProcess(null);
+                    task.setCurrentStream(null);
+                    cleanup(videoFile, audioFile);
+                    task.setStatus(TaskStatus.CANCELLED);
+                    task.setError("已取消");
+                    task.setFinishedAt(System.currentTimeMillis());
+                    return;
+                }
                 // 网络类错误：自动重试（限次数 + 间隔），期间可取消
                 if (attempts < TASK_AUTO_RETRY_MAX && isNetworkError(e)) {
                     attempts++;
@@ -518,7 +528,9 @@ public class DownloadService {
 
     /** 单连接流式下载到文件 */
     private void streamDownload(String url, File target, DownloadTask task, AtomicLong done) throws Exception {
+        if (task.isCancelled()) throw new DownloadCancelledException();
         try (CloseableHttpResponse resp = apiClient.openStream(url, null)) {
+            task.setCurrentStream(resp);
             int status = resp.getStatusLine().getStatusCode();
             if (status != 200) {
                 throw new RuntimeException("HTTP " + status + " 下载失败");
@@ -529,6 +541,7 @@ public class DownloadService {
             }
             try (InputStream in = resp.getEntity().getContent();
                  OutputStream out = new FileOutputStream(target)) {
+                task.setCurrentStream(in);
                 byte[] buf = new byte[BUFFER_SIZE];
                 int n;
                 while ((n = in.read(buf)) != -1) {
@@ -538,7 +551,11 @@ public class DownloadService {
                     task.updateProgress(done.get(), task.getTotalBytes());
                 }
                 out.flush();
+            } finally {
+                task.setCurrentStream(null);
             }
+        } finally {
+            task.setCurrentStream(null);
         }
     }
 
