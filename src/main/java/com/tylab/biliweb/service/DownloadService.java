@@ -59,7 +59,7 @@ public class DownloadService {
         this.ffmpegUtil = ffmpegUtil;
         this.downloadDir = downloadDir;
         this.autoCleanHours = autoCleanHours;
-        this.executor = Executors.newFixedThreadPool(2, new ThreadFactory() {
+        this.executor = Executors.newFixedThreadPool(4, new ThreadFactory() {
             private final AtomicLong n = new AtomicLong();
             @Override
             public Thread newThread(Runnable r) {
@@ -270,17 +270,21 @@ public class DownloadService {
 
     /** 任务主流程（含网络错误自动重试） */
     private void execute(DownloadTask task) {
+        if (task.isCancelled()) return;
         task.setWorkerThread(Thread.currentThread());
         int attempts = 0;
         while (true) {
+            if (task.isCancelled()) return;
             File dir = prepareDir(task);
             File videoFile = null;
             File audioFile = null;
             try {
                 task.setStatus(TaskStatus.DOWNLOADING);
+                task.setStage("正在连接流媒体服务器…");
 
                 // 1. 获取播放流
                 PlayUrlResult play = apiClient.getPlayUrl(task.getBvid(), task.getCid(), task.getQuality());
+                if (task.isCancelled()) throw new DownloadCancelledException();
                 StreamInfo video = pickVideoStream(play, task);
                 StreamInfo audio = pickAudioStream(play);
 

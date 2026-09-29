@@ -1388,7 +1388,7 @@ function renderTask(t) {
       </div>
       <div class="task-right">
         <span class="status ${statusClass}">${esc(t.stage || t.status)}</span>
-        <button class="del-btn" title="删除记录" onclick="deleteTask('${t.id}')">&times;</button>
+        <button class="del-btn" title="删除记录" onclick="deleteTask('${t.id}', this)">&times;</button>
       </div>
     </div>
     ${(t.status === 'COMPLETED' || t.status === 'FAILED' || t.status === 'CANCELLED') ? '' :
@@ -1418,9 +1418,32 @@ async function cancelTask(id, btn) {
   setTimeout(refreshTasks, 150);
 }
 
-async function deleteTask(id) {
+async function deleteTask(id, btn) {
   if (!confirm('确定从列表中移除此任务吗？')) return;
-  await apiFetch('/api/task/' + id, { method: 'DELETE' });
+  
+  // 乐观 UI 更新：0ms 瞬间在界面上淡出并移除该卡片，彻底告别延迟感
+  if (btn) {
+    const card = btn.closest('.task');
+    if (card) {
+      card.style.transition = 'all .25s ease';
+      card.style.opacity = '0';
+      card.style.transform = 'scale(0.96)';
+      setTimeout(() => {
+        if (card.parentNode) card.parentNode.removeChild(card);
+        const box = document.getElementById('taskList');
+        if (box && box.children.length === 0) {
+          box.innerHTML = '<div class="empty">暂无任务</div>';
+        }
+      }, 250);
+    }
+  }
+
+  showToast('已从列表中移除');
+  try {
+    await apiFetch('/api/task/' + id, { method: 'DELETE' });
+  } catch (e) {
+    console.error('Delete task error:', e);
+  }
   refreshTasks();
   fetchStorage();
 }
