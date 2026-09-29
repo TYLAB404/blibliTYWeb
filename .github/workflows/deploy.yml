@@ -1,0 +1,59 @@
+name: 手动一键部署到云服务器
+
+on:
+  workflow_dispatch: # 关键：只有在 GitHub 网页上点击按钮才会触发！
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出最新代码
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 2. 配置 JDK 17 环境
+      - name: 安装 Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # 3. 使用 Maven 编译打包出 jar
+      - name: 编译打包
+        run: mvn clean package -DskipTests
+
+      # 4. 把打包好的 jar 传输到云服务器
+      - name: 传输文件到服务器
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASS }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "target/bili-web-0.1.0.jar"
+          target: "/www/wwwroot/bili-web/"
+          strip_components: 1
+          overwrite: true
+
+      # 5. 登录服务器平滑重启 Java 进程
+      - name: 重启服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASS }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            echo "正在停止旧的进程..."
+            pkill -f 'bili-web-0.1.0.jar' || true
+            sleep 2
+            
+            echo "正在后台启动新版本..."
+            cd /www/wwwroot/bili-web
+            nohup java -jar bili-web-0.1.0.jar --app.ffmpeg-path=/usr/bin/ffmpeg > app.log 2>&1 &
+            sleep 2
+            
+            echo "检查启动状态："
+            pgrep -f 'bili-web-0.1.0.jar' && echo "部署成功！" || echo "启动失败，请检查日志"
