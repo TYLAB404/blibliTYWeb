@@ -1313,13 +1313,19 @@ function onModeChange() {
   }
 }
 
+const deletedTaskIds = new Set();
+
 /* 刷新任务列表与智能轮询 */
 async function refreshTasks() {
   try {
     const resp = await apiFetch('/api/tasks');
     if (!resp.ok) return;
-    const list = await resp.json();
+    let list = await resp.json();
     const box = document.getElementById('taskList');
+    
+    // 关键核心防护：过滤掉已被前端删除的任务，彻底杜绝轮询网络竞态把卡片“复活”拉回来！
+    list = list.filter(t => !deletedTaskIds.has(t.id));
+
     if (!list.length) { box.innerHTML = '<div class="empty">暂无任务</div>'; return; }
     list.sort((a, b) => b.createdAt - a.createdAt);
     box.innerHTML = list.map(t => renderTask(t)).join('');
@@ -1421,7 +1427,10 @@ async function cancelTask(id, btn) {
 async function deleteTask(id, btn) {
   if (!confirm('确定从列表中移除此任务吗？')) return;
   
-  // 乐观 UI 更新：0ms 瞬间在界面上淡出并移除该卡片，彻底告别延迟感
+  // 1. 立即加入黑名单集合，哪怕后台正在轮询，也绝不可能再把这个 ID 渲染复活
+  deletedTaskIds.add(id);
+
+  // 2. 乐观 UI 更新：0ms 瞬间在界面上淡出并移除该卡片，彻底告别延迟感
   if (btn) {
     const card = btn.closest('.task');
     if (card) {
@@ -1443,6 +1452,9 @@ async function deleteTask(id, btn) {
     await apiFetch('/api/task/' + id, { method: 'DELETE' });
   } catch (e) {
     console.error('Delete task error:', e);
+  } finally {
+    // 5秒后服务端已彻底移除，安全清理内存中的黑名单
+    setTimeout(() => deletedTaskIds.delete(id), 5000);
   }
   refreshTasks();
   fetchStorage();
