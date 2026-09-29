@@ -8,3 +8,4 @@ tools/
 .vscode/
 .DS_Store
 release/
+*.bat
