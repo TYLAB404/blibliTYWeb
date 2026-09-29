@@ -20,9 +20,26 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # 3. 使用 Maven 编译打包出 jar
+      # 3. 配置 Maven 镜像并编译打包（防止 Maven 官方中央仓库 429 限流）
       - name: 编译打包
-        run: mvn clean package -DskipTests
+        run: |
+          mkdir -p ~/.m2
+          cat << 'EOF' > ~/.m2/settings.xml
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <mirrors>
+              <mirror>
+                <id>aliyunmaven</id>
+                <mirrorOf>central</mirrorOf>
+                <name>Aliyun Maven</name>
+                <url>https://maven.aliyun.com/repository/public</url>
+              </mirror>
+            </mirrors>
+          </settings>
+          EOF
+          mvn clean package -DskipTests
 
       # 4. 把打包好的 jar 传输到云服务器
       - name: 传输文件到服务器
@@ -31,7 +48,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASS }}
-          port: ${{ secrets.SERVER_PORT }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
           source: "target/bili-web-0.1.0.jar"
           target: "/www/wwwroot/bili-web/"
           strip_components: 1
@@ -44,7 +61,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASS }}
-          port: ${{ secrets.SERVER_PORT }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
             echo "正在停止旧的进程..."
             pkill -f 'bili-web-0.1.0.jar' || true
