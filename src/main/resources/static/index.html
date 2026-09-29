@@ -216,18 +216,21 @@
   .task .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .task .title-box { flex: 1; min-width: 0; }
   .task .title {
-    font-size: 14px; font-weight: 600; color: #1e293b;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 14px; font-weight: 600; color: #1e293b; line-height: 1.45;
+    word-break: break-all;
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   }
-  .task .badges { display: inline-flex; gap: 6px; margin-left: 6px; vertical-align: middle; }
+  .task .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .badge { font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 600; }
   .badge-audio { background: #f1f5f9; color: #64748b; }
   .badge-quality { background: #fdf2f8; color: var(--primary); border: 1px solid #fce7f3; }
-  .task .status { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .task .task-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: 8px; }
+  .task .status { font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
   .task .del-btn {
     border: none; background: transparent; color: #94a3b8;
     cursor: pointer; font-size: 17px; line-height: 1; padding: 2px 6px; border-radius: 6px;
-    transition: all .15s;
+    transition: all .15s; flex-shrink: 0;
   }
   .task .del-btn:hover { color: #ef4444; background: #fee2e2; }
 
@@ -424,13 +427,26 @@
 
   @media (max-width: 600px) {
     .container { padding: 16px 12px 60px; }
-    header { gap: 8px; }
-    .header-actions { width: 100%; justify-content: flex-end; }
-    .global-status-bar { flex-direction: column; align-items: flex-start; }
+    header { gap: 10px; margin-bottom: 14px; }
+    .header-actions { width: 100%; justify-content: flex-start; gap: 6px; }
+    .top-btn { padding: 6px 10px; font-size: 12px; }
+    .disk-badge { font-size: 11px; padding: 5px 9px; }
+    .global-status-bar { flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 12px; }
+    .status-left { width: 100%; }
     .status-right { width: 100%; justify-content: space-between; }
-    .input-wrap { flex-wrap: wrap; }
-    .input-wrap input { width: 100%; }
+    .input-wrap { flex-wrap: wrap; padding: 8px 10px; gap: 8px; }
+    .input-wrap input { width: 100%; min-width: 100%; padding: 4px 0; font-size: 13.5px; }
+    .parse-btn { width: 100%; justify-content: center; margin-top: 2px; }
     .video-info img { width: 100%; height: auto; aspect-ratio: 16/10; }
+    .video-info .meta { min-width: 0; }
+    #dlBtn { width: 100%; justify-content: center; margin-top: 6px; }
+    .batch-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .batch-footer { flex-direction: column; align-items: flex-start; gap: 10px; }
+    #batchDlBtn { width: 100%; justify-content: center; }
+    .task { padding: 12px 12px; }
+    .task .top { gap: 8px; }
+    .task .title { font-size: 13px; line-height: 1.4; }
+    .task .status { font-size: 12px; }
   }
 </style>
 </head>
@@ -1343,10 +1359,10 @@ function renderTask(t) {
   return `<div class="task">
     <div class="top">
       <div class="title-box">
-        <span class="title">${esc(t.videoTitle)}${t.pagePart !== 'P1' ? ' · ' + esc(t.pagePart) : ''}</span>
-        <span class="badges">${modeTag}${qualityTag}</span>
+        <div class="title" title="${esc(t.videoTitle)}${t.pagePart !== 'P1' ? ' · ' + esc(t.pagePart) : ''}">${esc(t.videoTitle)}${t.pagePart !== 'P1' ? ' · ' + esc(t.pagePart) : ''}</div>
+        <div class="badges">${modeTag}${qualityTag}</div>
       </div>
-      <div style="display:flex; align-items:center; gap:8px;">
+      <div class="task-right">
         <span class="status ${statusClass}">${esc(t.stage || t.status)}</span>
         <button class="del-btn" title="删除记录" onclick="deleteTask('${t.id}')">&times;</button>
       </div>
