@@ -43,4 +43,19 @@ public class SystemController {
     public Map<String, Object> storage() {
         return downloadService.getStorageInfo();
     }
+
+    /** 临时排查日志 */
+    @GetMapping("/log")
+    public String log() {
+        try {
+            java.io.File file = new java.io.File("app.log");
+            if (!file.exists()) file = new java.io.File("/www/wwwroot/bili-web/app.log");
+            if (!file.exists()) return "app.log not found, cwd=" + System.getProperty("user.dir");
+            java.util.List<String> lines = java.nio.file.Files.readAllLines(file.toPath());
+            int from = Math.max(0, lines.size() - 80);
+            return String.join("\n", lines.subList(from, lines.size()));
+        } catch (Exception e) {
+            return "Read log failed: " + e.getMessage();
+        }
+    }
 }

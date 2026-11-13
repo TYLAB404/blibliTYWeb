@@ -18,6 +18,6 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(accessAuthInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/system/access-info", "/api/system/verify-token");
+                .excludePathPatterns("/api/system/access-info", "/api/system/verify-token", "/api/system/log");
     }
 }
