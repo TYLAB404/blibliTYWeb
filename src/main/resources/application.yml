@@ -16,6 +16,8 @@ app:
   access-token: ""
   # 已完成/历史下载文件自动清理保留时间（小时），超过此时间的文件和记录将自动删除释放磁盘；填 0 表示不自动清理
   auto-clean-hours: 24
+  # 自定义抖音/TikTok 解析中继接口（可选，如配置了私有 Evil0ctal/TikHub 等解析服务可填入，留空则使用内置高可用多引擎解析）
+  douyin-api-url: ""
 
 spring:
   jackson:

@@ -448,13 +448,143 @@
     .task .title { font-size: 13px; line-height: 1.4; }
     .task .status { font-size: 12px; }
   }
+
+  /* 抖音 / TikTok 解析展示卡片 (HelloTik 风格) */
+  .douyin-card {
+    margin-top: 20px; background: #fff; border-radius: var(--radius-md);
+    border: 1px solid var(--border-color); padding: 22px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04); display: none;
+    animation: fadeIn .25s ease-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .douyin-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 16px; padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-color); flex-wrap: wrap;
+  }
+  .douyin-author-box { display: flex; align-items: center; gap: 12px; }
+  .douyin-avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    object-fit: cover; border: 2px solid #e2e8f0; background: #f1f5f9;
+  }
+  .douyin-author-meta { display: flex; flex-direction: column; gap: 2px; }
+  .douyin-author-name { font-size: 15px; font-weight: 700; color: #0f172a; }
+  .douyin-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 2px 8px; border-radius: 12px;
+    font-weight: 600; width: fit-content;
+  }
+  .badge-video { background: #fee2e2; color: #e11d48; }
+  .badge-image { background: #e0f2fe; color: #0284c7; }
+
+  .douyin-title-wrap {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 18px; font-size: 14px;
+    line-height: 1.6; color: #1e293b; position: relative;
+    word-break: break-word;
+  }
+  .copy-title-btn {
+    position: absolute; top: 10px; right: 10px;
+    background: #fff; border: 1px solid #cbd5e1; color: #475569;
+    font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+    cursor: pointer; transition: all .15s;
+  }
+  .copy-title-btn:hover { background: #f1f5f9; color: var(--primary); }
+
+  .douyin-media-body {
+    display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start;
+  }
+  .douyin-preview-wrap {
+    flex: 0 0 240px; max-width: 100%; border-radius: 12px;
+    overflow: hidden; background: #000; position: relative;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  }
+  .douyin-preview-img {
+    width: 100%; height: auto; max-height: 320px;
+    display: block; object-fit: cover;
+  }
+  .douyin-actions-wrap {
+    flex: 1; min-width: 260px; display: flex;
+    flex-direction: column; gap: 12px;
+  }
+
+  .btn-douyin-dl {
+    background: linear-gradient(135deg, #fe2c55 0%, #ff0050 100%);
+    color: #fff; padding: 13px 22px; font-size: 15px; font-weight: 700;
+    border-radius: 10px; border: none; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 8px; box-shadow: 0 4px 14px rgba(254, 44, 85, 0.3);
+    text-decoration: none; transition: all .2s;
+  }
+  .btn-douyin-dl:hover {
+    transform: translateY(-2px); box-shadow: 0 6px 18px rgba(254, 44, 85, 0.42);
+    color: #fff;
+  }
+
+  .btn-douyin-audio {
+    background: #f8fafc; color: #334155; border: 1.5px solid #cbd5e1;
+    padding: 11px 18px; font-size: 14px; font-weight: 600; border-radius: 10px;
+    cursor: pointer; display: inline-flex; align-items: center;
+    justify-content: center; gap: 8px; text-decoration: none;
+    transition: all .2s;
+  }
+  .btn-douyin-audio:hover {
+    background: #e2e8f0; color: #0f172a; border-color: #94a3b8;
+  }
+
+  .btn-douyin-zip {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #fff; padding: 13px 22px; font-size: 15px; font-weight: 700;
+    border-radius: 10px; border: none; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 8px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.28);
+    text-decoration: none; transition: all .2s;
+  }
+  .btn-douyin-zip:hover {
+    transform: translateY(-2px); box-shadow: 0 6px 18px rgba(16, 185, 129, 0.4);
+    color: #fff;
+  }
+
+  /* 图集网格 (HelloTik 风格) */
+  .douyin-images-wrap { margin-top: 18px; width: 100%; }
+  .douyin-images-header {
+    font-size: 14px; font-weight: 700; color: #334155;
+    margin-bottom: 12px; display: flex; align-items: center;
+    justify-content: space-between;
+  }
+  .douyin-images-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+  }
+  .douyin-image-item {
+    position: relative; border-radius: 10px; overflow: hidden;
+    background: #f1f5f9; border: 1px solid var(--border-color);
+    aspect-ratio: 1 / 1; box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  }
+  .douyin-image-item img {
+    width: 100%; height: 100%; object-fit: cover;
+    transition: transform .25s ease;
+  }
+  .douyin-image-item:hover img { transform: scale(1.06); }
+  .douyin-img-download-btn {
+    position: absolute; bottom: 6px; right: 6px; left: 6px;
+    background: rgba(15, 23, 42, 0.82); color: #fff; border: none;
+    border-radius: 6px; font-size: 11px; font-weight: 600;
+    padding: 6px 0; cursor: pointer; text-align: center;
+    text-decoration: none; display: block; backdrop-filter: blur(4px);
+    transition: all .2s;
+  }
+  .douyin-img-download-btn:hover { background: rgba(254, 44, 85, 0.95); }
 </style>
 </head>
 <body>
 <div class="container">
   <header>
     <div class="logo">B</div>
-    <h1>Bili Web 下载器</h1>
+    <h1>Bili & 抖音 Web 下载器</h1>
     <div class="spacer"></div>
     <div class="header-actions">
       <div class="disk-badge" id="storageBadge" title="下载目录剩余可用磁盘空间">
@@ -484,15 +614,15 @@
   <!-- 链接解析卡片 -->
   <div class="card">
     <div class="input-wrap">
-      <input id="urlInput" placeholder="粘贴 B 站视频或番剧链接，如 https://www.bilibili.com/bangumi/play/ss... 或 BV..." oninput="onUrlInputChanged()" onkeydown="if(event.key==='Enter')parse()" />
+      <input id="urlInput" placeholder="粘贴 B 站链接（BV号/av/番剧）或 抖音/TikTok 分享口令与链接…" oninput="onUrlInputChanged()" onkeydown="if(event.key==='Enter')parse()" />
       <button class="input-action-btn clear-btn" id="clearUrlBtn" onclick="clearUrlInput()" title="清空内容" style="display:none;">✕</button>
       <button class="input-action-btn paste-btn" id="pasteUrlBtn" onclick="pasteUrlInput()" title="从剪贴板粘贴">📋 粘贴</button>
       <button class="btn parse-btn" id="parseBtn" onclick="parse()">解析内容</button>
     </div>
-    <div class="hint">支持 BV/av 号、番剧影视（ss/ep 号）、完整链接、网页与 Markdown 标题链接、b23.tv 短链（自动解析多分P与整季番剧）</div>
+    <div class="hint">支持 B 站视频/番剧（BV/av号、ss/ep号、b23.tv 短链）与 抖音/TikTok（短链、长链、带文案分享口令），智能识别类型</div>
     <div id="parseErr" class="err-msg"></div>
 
-    <!-- 视频详情与下载控制 -->
+    <!-- B 站视频详情与下载控制 -->
     <div id="videoInfo" style="display:none">
       <div class="video-info">
         <img id="cover" src="" alt="cover" referrerpolicy="no-referrer" onerror="onCoverError(this)" />
@@ -535,6 +665,58 @@
           </div>
           <button class="btn sm" id="batchDlBtn" onclick="startBatchDownload()">批量加入下载队列</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 抖音 / TikTok 解析结果与下载卡片 (HelloTik 风格) -->
+    <div id="douyinInfo" class="douyin-card" style="display:none">
+      <div class="douyin-header">
+        <div class="douyin-author-box">
+          <img id="dyAvatar" class="douyin-avatar" src="" alt="avatar" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%23cbd5e1%22/></svg>'" />
+          <div class="douyin-author-meta">
+            <span id="dyAuthor" class="douyin-author-name">抖音用户</span>
+            <span id="dyBadge" class="douyin-badge badge-video">🎬 视频</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="douyin-title-wrap">
+        <button class="copy-title-btn" onclick="copyDouyinTitle()" title="复制文案">📋 复制文案</button>
+        <div id="dyTitle"></div>
+      </div>
+
+      <div class="douyin-media-body">
+        <div class="douyin-preview-wrap">
+          <img id="dyCover" class="douyin-preview-img" src="" alt="preview" referrerpolicy="no-referrer" />
+        </div>
+        <div class="douyin-actions-wrap">
+          <!-- 视频下载区域 -->
+          <div id="dyVideoActions" style="display:flex; flex-direction:column; gap:12px;">
+            <a id="dyVideoDlBtn" class="btn-douyin-dl" href="#" target="_blank">
+              <span>📥 下载无水印视频 (1080P/原画 MP4)</span>
+            </a>
+          </div>
+
+          <!-- 图集打包下载区域 -->
+          <div id="dyImageActions" style="display:none; flex-direction:column; gap:12px;">
+            <button id="dyZipDlBtn" class="btn-douyin-zip" onclick="downloadDouyinZip()">
+              <span>📦 一键打包下载全部高清图片 (ZIP)</span>
+            </button>
+          </div>
+
+          <!-- 原声音频下载 -->
+          <a id="dyAudioDlBtn" class="btn-douyin-audio" href="#" target="_blank" style="display:none;">
+            <span>🎵 下载原声/背景音乐 (MP3)</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- 图集网格 -->
+      <div id="dyImagesGridWrap" class="douyin-images-wrap" style="display:none;">
+        <div class="douyin-images-header">
+          <span>高清无水印图集预览（可单张点击保存）</span>
+        </div>
+        <div class="douyin-images-grid" id="dyImagesGrid"></div>
       </div>
     </div>
   </div>
@@ -902,6 +1084,9 @@ function clearUrlInput() {
   input.value = '';
   document.getElementById('clearUrlBtn').style.display = 'none';
   document.getElementById('parseErr').textContent = '';
+  document.getElementById('videoInfo').style.display = 'none';
+  const dyCard = document.getElementById('douyinInfo');
+  if (dyCard) dyCard.style.display = 'none';
   input.focus();
 }
 
@@ -1097,12 +1282,14 @@ async function deleteFriendLink(id) {
   }
 }
 
-/* 解析视频 */
+/* 解析视频/图集（自动识别 B 站与抖音/TikTok） */
+let currentDouyinData = null;
+
 async function parse() {
   const url = document.getElementById('urlInput').value.trim();
   const err = document.getElementById('parseErr');
   err.textContent = '';
-  if (!url) { err.textContent = '请输入视频链接'; return; }
+  if (!url) { err.textContent = '请输入视频或分享链接'; return; }
   const btn = document.getElementById('parseBtn');
   btn.disabled = true; btn.textContent = '解析中…';
   try {
@@ -1113,6 +1300,16 @@ async function parse() {
     });
     const data = await resp.json();
     if (!resp.ok) { err.textContent = data.error || '解析失败'; return; }
+
+    // 1. 如果是抖音 / TikTok
+    if (data.platform === 'douyin') {
+      document.getElementById('videoInfo').style.display = 'none';
+      renderDouyinInfo(data);
+      return;
+    }
+
+    // 2. 否则按 B 站视频展示
+    document.getElementById('douyinInfo').style.display = 'none';
     currentVideo = data;
     const coverImg = document.getElementById('cover');
     coverImg.dataset.retried = '';
@@ -1154,6 +1351,121 @@ async function parse() {
   } finally {
     btn.disabled = false; btn.textContent = '解析内容';
   }
+}
+
+/* 渲染抖音/TikTok 解析卡片 (HelloTik 风格) */
+function renderDouyinInfo(data) {
+  currentDouyinData = data;
+  const dyCard = document.getElementById('douyinInfo');
+  dyCard.style.display = 'block';
+
+  // 作者
+  const avatarImg = document.getElementById('dyAvatar');
+  avatarImg.src = data.authorAvatar ? proxyImg(data.authorAvatar) : '';
+  document.getElementById('dyAuthor').textContent = data.authorName || '抖音用户';
+
+  // 徽标类型
+  const isImage = data.type === 'image';
+  const badge = document.getElementById('dyBadge');
+  badge.className = 'douyin-badge ' + (isImage ? 'badge-image' : 'badge-video');
+  badge.textContent = isImage ? `🖼️ 图集 (${data.images ? data.images.length : 0}张)` : '🎬 视频';
+
+  // 标题
+  document.getElementById('dyTitle').textContent = data.title || '（未提供文案描述）';
+
+  // 封面
+  const coverImg = document.getElementById('dyCover');
+  coverImg.src = data.cover ? proxyImg(data.cover) : '';
+
+  // 动作与展示控制
+  const videoActions = document.getElementById('dyVideoActions');
+  const imageActions = document.getElementById('dyImageActions');
+  const imagesGridWrap = document.getElementById('dyImagesGridWrap');
+
+  if (isImage) {
+    videoActions.style.display = 'none';
+    imageActions.style.display = 'flex';
+    imagesGridWrap.style.display = 'block';
+
+    const grid = document.getElementById('dyImagesGrid');
+    grid.innerHTML = (data.images || []).map((imgUrl, idx) => `
+      <div class="douyin-image-item">
+        <img src="${proxyImg(imgUrl)}" alt="image_${idx + 1}" loading="lazy" />
+        <a class="douyin-img-download-btn" href="/api/douyin/download?url=${encodeURIComponent(imgUrl)}&title=${encodeURIComponent((data.title || 'image') + '_' + (idx + 1))}&type=image" target="_blank">⬇️ 保存第 ${idx + 1} 张</a>
+      </div>
+    `).join('');
+  } else {
+    videoActions.style.display = 'flex';
+    imageActions.style.display = 'none';
+    imagesGridWrap.style.display = 'none';
+
+    const dlBtn = document.getElementById('dyVideoDlBtn');
+    if (data.videoUrl) {
+      dlBtn.href = `/api/douyin/download?url=${encodeURIComponent(data.videoUrl)}&title=${encodeURIComponent(data.title || 'douyin_video')}&type=video`;
+      dlBtn.style.display = 'inline-flex';
+    } else {
+      dlBtn.style.display = 'none';
+    }
+  }
+
+  // 音频下载按钮
+  const audioBtn = document.getElementById('dyAudioDlBtn');
+  if (data.musicUrl) {
+    audioBtn.href = `/api/douyin/download?url=${encodeURIComponent(data.musicUrl)}&title=${encodeURIComponent(data.musicTitle || data.title || 'douyin_audio')}&type=audio`;
+    audioBtn.style.display = 'inline-flex';
+    audioBtn.innerHTML = `<span>🎵 下载原声/背景音乐 (${esc(data.musicTitle || 'MP3')})</span>`;
+  } else {
+    audioBtn.style.display = 'none';
+  }
+}
+
+/* 媒体图片防盗链代理 */
+function proxyImg(u) {
+  if (!u) return '';
+  return '/api/proxy/image?url=' + encodeURIComponent(u);
+}
+
+/* 一键打包下载图集 ZIP */
+async function downloadDouyinZip() {
+  if (!currentDouyinData || !currentDouyinData.images || !currentDouyinData.images.length) return;
+  const btn = document.getElementById('dyZipDlBtn');
+  const oldHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span>⏳ 正在打包压缩图集中，请稍候…</span>';
+
+  try {
+    const resp = await apiFetch('/api/douyin/download-zip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: currentDouyinData.title || 'douyin_images',
+        images: currentDouyinData.images
+      })
+    });
+    if (!resp.ok) throw new Error('打包失败 (HTTP ' + resp.status + ')');
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (currentDouyinData.title || 'douyin_images') + '-图集.zip';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (e) {
+    alert('打包下载失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+  }
+}
+
+/* 复制文案 */
+function copyDouyinTitle() {
+  if (!currentDouyinData || !currentDouyinData.title) return;
+  navigator.clipboard.writeText(currentDouyinData.title).then(() => {
+    alert('文案已成功复制到剪贴板！');
+  }).catch(() => {
+    alert('复制失败，请手动长按/拖选文字复制');
+  });
 }
 
 /* 封面防盗链自动代理降级 */

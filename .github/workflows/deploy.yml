@@ -81,7 +81,7 @@ jobs:
             
             echo "正在后台启动新版本..."
             cd "$APP_DIR"
-            nohup java -jar bili-web-0.1.0.jar --app.ffmpeg-path=/usr/bin/ffmpeg > app.log 2>&1 < /dev/null &
+            nohup java -Djdk.lang.Process.launchMechanism=vfork -jar bili-web-0.1.0.jar --app.ffmpeg-path=/usr/bin/ffmpeg > app.log 2>&1 < /dev/null &
             echo $! > "$PID_FILE"
             sleep 3
             

@@ -4,6 +4,7 @@ import java.util.List;
 
 /** B 站视频基本信息（view 接口结果） */
 public class VideoInfo {
+    private String platform = "bilibili";
     private String bvid;
     private long aid;
     private String title;
@@ -11,6 +12,8 @@ public class VideoInfo {
     private List<VideoPage> pages;
     private Integer defaultPageIndex;
 
+    public String getPlatform() { return platform; }
+    public void setPlatform(String platform) { this.platform = platform; }
     public String getBvid() { return bvid; }
     public void setBvid(String bvid) { this.bvid = bvid; }
     public long getAid() { return aid; }

@@ -31,10 +31,14 @@ public class DownloadController {
 
     private final DownloadService downloadService;
     private final com.tylab.biliweb.api.BiliApiClient apiClient;
+    private final com.tylab.biliweb.api.DouyinApiClient douyinApiClient;
 
-    public DownloadController(DownloadService downloadService, com.tylab.biliweb.api.BiliApiClient apiClient) {
+    public DownloadController(DownloadService downloadService,
+                              com.tylab.biliweb.api.BiliApiClient apiClient,
+                              com.tylab.biliweb.api.DouyinApiClient douyinApiClient) {
         this.downloadService = downloadService;
         this.apiClient = apiClient;
+        this.douyinApiClient = douyinApiClient;
     }
 
     /** 创建下载任务 */
@@ -155,7 +159,7 @@ public class DownloadController {
                 .body(new FileSystemResource(f));
     }
 
-    /** B 站封面图片防盗链代理（支持跨域、带 B 站 Referer，双重保险） */
+    /** 封面/媒体图片防盗链代理（支持 B 站与抖音/TikTok，双重保险） */
     @GetMapping("/proxy/image")
     public ResponseEntity<byte[]> proxyImage(@org.springframework.web.bind.annotation.RequestParam String url) {
         if (url == null || url.trim().isEmpty()) {
@@ -164,10 +168,15 @@ public class DownloadController {
         try {
             java.net.URI uri = new java.net.URI(url);
             String host = uri.getHost();
-            if (host == null || (!host.endsWith(".hdslb.com") && !host.endsWith(".bilibili.com"))) {
+            if (host == null) {
                 return ResponseEntity.badRequest().build();
             }
-            try (CloseableHttpResponse resp = apiClient.openStream(url, null)) {
+            boolean isBili = host.endsWith(".hdslb.com") || host.endsWith(".bilibili.com");
+            boolean isDouyin = host.contains("douyin") || host.contains("byteimg") || host.contains("pstatp") || host.contains("tiktok");
+            if (!isBili && !isDouyin) {
+                return ResponseEntity.badRequest().build();
+            }
+            try (CloseableHttpResponse resp = isDouyin ? douyinApiClient.openStream(url, null) : apiClient.openStream(url, null)) {
                 int status = resp.getStatusLine().getStatusCode();
                 if (status != 200 || resp.getEntity() == null) {
                     return ResponseEntity.status(status).build();
