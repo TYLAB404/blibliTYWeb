@@ -73,23 +73,23 @@ jobs:
                 kill -9 "$OLD_PID" || true
               fi
               rm -f "$PID_FILE"
-            else
-              # 首次部署兜底：释放 8080 端口旧进程
-              fuser -k 8080/tcp || true
             fi
+            # 彻底强制释放 8080 端口与所有 bili-web 旧进程
+            fuser -k 8080/tcp || true
+            pkill -9 -f "bili-web-0.1.0.jar" || true
             sleep 2
             
             echo "正在后台启动新版本..."
             cd "$APP_DIR"
             nohup java -Djdk.lang.Process.launchMechanism=vfork -jar bili-web-0.1.0.jar --app.ffmpeg-path=/usr/bin/ffmpeg > app.log 2>&1 < /dev/null &
             echo $! > "$PID_FILE"
-            sleep 3
+            sleep 10
             
             NEW_PID=$(cat "$PID_FILE")
             if ps -p "$NEW_PID" > /dev/null 2>&1; then
               echo "✅ 部署成功！项目独立运行中，PID: $NEW_PID"
-              echo "--- 启动日志预览 ---"
-              tail -n 30 app.log || true
+              echo "--- 启动日志详情 ---"
+              cat app.log | tail -n 50 || true
             else
               echo "❌ 启动失败，请检查 app.log 日志"
               cat app.log || true
