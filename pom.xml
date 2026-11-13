@@ -18,7 +18,7 @@
     <description>Bilibili 视频下载 Web 版</description>
 
     <properties>
-        <java.version>1.8</java.version>
+        <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
