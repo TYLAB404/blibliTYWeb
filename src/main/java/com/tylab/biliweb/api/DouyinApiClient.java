@@ -68,6 +68,7 @@ public class DouyinApiClient {
                 .setConnectTimeout(10_000)
                 .setSocketTimeout(12_000)
                 .setConnectionRequestTimeout(10_000)
+                .setCookieSpec(org.apache.http.client.config.CookieSpecs.STANDARD)
                 .build();
 
         org.apache.http.impl.conn.PoolingHttpClientConnectionManager cm =
@@ -78,7 +79,6 @@ public class DouyinApiClient {
         this.httpClient = HttpClients.custom()
                 .setConnectionManager(cm)
                 .setDefaultRequestConfig(config)
-                .setDefaultHeaders(Collections.singletonList(new BasicHeader(HttpHeaders.USER_AGENT, PC_UA)))
                 .setRedirectStrategy(new LaxRedirectStrategy())
                 .build();
 
@@ -198,26 +198,32 @@ public class DouyinApiClient {
         String[] endpoints = new String[]{
                 "https://api3-normal-c-hl.amemv.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128",
                 "https://aweme.snssdk.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128",
-                "https://api5-normal-c-hl.amemv.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128"
+                "https://api5-normal-c-hl.amemv.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128",
+                "https://api.amemv.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128"
         };
 
         for (String url : endpoints) {
             try {
                 HttpGet request = new HttpGet(url);
                 request.setHeader(HttpHeaders.USER_AGENT, APP_UA);
+                request.setHeader("Accept", "*/*");
                 request.setHeader("X-Argus", "");
                 request.setHeader("X-Ladon", "");
 
                 try (CloseableHttpResponse resp = httpClient.execute(request)) {
                     int status = resp.getStatusLine().getStatusCode();
-                    if (status == 200 && resp.getEntity() != null) {
-                        String body = EntityUtils.toString(resp.getEntity(), StandardCharsets.UTF_8);
+                    String body = resp.getEntity() != null ? EntityUtils.toString(resp.getEntity(), StandardCharsets.UTF_8) : "";
+                    log.info("Feed 端点 ({}) 响应: status={}, bodyLen={}", url, status, body.length());
+                    if (status == 200 && !body.isEmpty()) {
                         JsonNode root = mapper.readTree(body);
                         JsonNode list = root.path("aweme_list");
+                        int count = list.isArray() ? list.size() : -1;
+                        log.info("Feed 端点返回 aweme_list 元素数量: {}", count);
                         if (list.isArray() && list.size() > 0) {
                             JsonNode targetItem = null;
                             for (JsonNode item : list) {
-                                if (awemeId.equals(item.path("aweme_id").asText(""))) {
+                                String itemId = item.path("aweme_id").asText("");
+                                if (awemeId.equals(itemId)) {
                                     targetItem = item;
                                     break;
                                 }
@@ -227,13 +233,19 @@ public class DouyinApiClient {
                             }
                             DouyinInfo info = buildFromAwemeDetail(targetItem, awemeId);
                             if (info != null && (info.getVideoUrl() != null || !info.getImages().isEmpty())) {
+                                log.info("Feed 端点成功解析媒体: 标题={}, 视频地址={}, 图集数={}",
+                                        info.getTitle(), info.getVideoUrl(), info.getImages().size());
                                 return info;
+                            } else {
+                                log.warn("Feed 端点返回数据未能提取有效视频或图片地址");
                             }
                         }
+                    } else {
+                        log.warn("Feed 端点响应非 200: status={}, 内容={}", status, body.substring(0, Math.min(200, body.length())));
                     }
                 }
             } catch (Exception e) {
-                log.warn("移动端 Feed 端点 ({}) 请求异常: {}", url, e.getMessage());
+                log.warn("移动端 Feed 端点 ({}) 请求异常: {}", url, e.getMessage(), e);
             }
         }
         return null;
