@@ -44,6 +44,8 @@ public class DouyinApiClient {
             + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
     private static final String MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 "
             + "(KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
+    private static final String APP_UA = "com.ss.android.ugc.aweme/230101 (Linux; U; Android 10; zh_CN; SM-G988N; "
+            + "Build/QP1A.190711.020; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d358 2020-03-24)";
 
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s，,]+", Pattern.CASE_INSENSITIVE);
     private static final Pattern DOUYIN_HOST_PATTERN = Pattern.compile("(?i)(?:v\\.douyin\\.com|douyin\\.com|iesdouyin\\.com|tiktok\\.com|vt\\.tiktok\\.com)");
@@ -145,12 +147,25 @@ public class DouyinApiClient {
             }
         }
 
-        // 引擎 B: 官方接口直连解析（携带 ttwid 凭证与模拟请求）
+        // 引擎 B: 官方移动端 Feed 接口直连解析（免签名、免 WAF/Argus，原生支持国内抖音无水印全格式）
+        if (awemeId != null) {
+            try {
+                info = parseFromAppFeedApi(awemeId);
+                if (info != null && (info.getVideoUrl() != null || !info.getImages().isEmpty())) {
+                    log.info("移动端 Feed 接口解析成功: {}", info.getTitle());
+                    return info;
+                }
+            } catch (Exception e) {
+                log.warn("移动端 Feed 接口解析失败，尝试网页接口: {}", e.getMessage());
+            }
+        }
+
+        // 引擎 C: 官方网页端接口直连解析（携带 ttwid 凭证与模拟请求）
         if (awemeId != null) {
             try {
                 info = parseFromOfficialApi(awemeId, resolvedUrl);
                 if (info != null && (info.getVideoUrl() != null || !info.getImages().isEmpty())) {
-                    log.info("官方端点解析成功: {}", info.getTitle());
+                    log.info("官方网页端点解析成功: {}", info.getTitle());
                     return info;
                 }
             } catch (Exception e) {
@@ -158,7 +173,7 @@ public class DouyinApiClient {
             }
         }
 
-        // 引擎 C: 高可用公共免密引擎 Fallback
+        // 引擎 D: 高可用公共免密引擎 Fallback
         try {
             info = parseFromPublicFallback(rawUrl, awemeId);
             if (info != null) {
@@ -174,6 +189,54 @@ public class DouyinApiClient {
         }
 
         return info;
+    }
+
+    /**
+     * 官方移动端 Feed 接口直连解析（高可用、免登录、免 WAF 拦截）
+     */
+    private DouyinInfo parseFromAppFeedApi(String awemeId) {
+        String[] endpoints = new String[]{
+                "https://api3-normal-c-hl.amemv.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128",
+                "https://aweme.snssdk.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128",
+                "https://api5-normal-c-hl.amemv.com/aweme/v1/feed/?aweme_id=" + awemeId + "&aid=1128"
+        };
+
+        for (String url : endpoints) {
+            try {
+                HttpGet request = new HttpGet(url);
+                request.setHeader(HttpHeaders.USER_AGENT, APP_UA);
+                request.setHeader("X-Argus", "");
+                request.setHeader("X-Ladon", "");
+
+                try (CloseableHttpResponse resp = httpClient.execute(request)) {
+                    int status = resp.getStatusLine().getStatusCode();
+                    if (status == 200 && resp.getEntity() != null) {
+                        String body = EntityUtils.toString(resp.getEntity(), StandardCharsets.UTF_8);
+                        JsonNode root = mapper.readTree(body);
+                        JsonNode list = root.path("aweme_list");
+                        if (list.isArray() && list.size() > 0) {
+                            JsonNode targetItem = null;
+                            for (JsonNode item : list) {
+                                if (awemeId.equals(item.path("aweme_id").asText(""))) {
+                                    targetItem = item;
+                                    break;
+                                }
+                            }
+                            if (targetItem == null) {
+                                targetItem = list.get(0);
+                            }
+                            DouyinInfo info = buildFromAwemeDetail(targetItem, awemeId);
+                            if (info != null && (info.getVideoUrl() != null || !info.getImages().isEmpty())) {
+                                return info;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("移动端 Feed 端点 ({}) 请求异常: {}", url, e.getMessage());
+            }
+        }
+        return null;
     }
 
     /**
@@ -252,13 +315,24 @@ public class DouyinApiClient {
                 info.setCover(coverList.get(0).asText(""));
             }
 
-            // 无水印视频地址
-            JsonNode playAddr = video.path("play_addr").path("url_list");
-            if (playAddr.isArray() && playAddr.size() > 0) {
-                String rawPlayUrl = playAddr.get(0).asText("");
-                // 将 playwm 替换为 play 去除水印
-                String noWatermarkUrl = rawPlayUrl.replace("playwm", "play");
-                info.setVideoUrl(noWatermarkUrl);
+            // 优先从 bit_rate 提取最高清无水印视频地址
+            JsonNode bitRates = video.path("bit_rate");
+            if (bitRates.isArray() && bitRates.size() > 0) {
+                JsonNode bestGear = bitRates.get(0);
+                JsonNode brUrls = bestGear.path("play_addr").path("url_list");
+                if (brUrls.isArray() && brUrls.size() > 0) {
+                    String bestUrl = brUrls.get(0).asText("");
+                    info.setVideoUrl(bestUrl.replace("playwm", "play"));
+                }
+            }
+
+            // 若 bit_rate 未提取到，从 play_addr 提取无水印视频地址
+            if (info.getVideoUrl() == null || info.getVideoUrl().isEmpty()) {
+                JsonNode playAddr = video.path("play_addr").path("url_list");
+                if (playAddr.isArray() && playAddr.size() > 0) {
+                    String rawPlayUrl = playAddr.get(0).asText("");
+                    info.setVideoUrl(rawPlayUrl.replace("playwm", "play"));
+                }
             }
         }
 
