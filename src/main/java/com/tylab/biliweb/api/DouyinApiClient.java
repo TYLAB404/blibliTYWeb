@@ -316,8 +316,10 @@ public class DouyinApiClient {
             // 普通视频
             info.setType("video");
             JsonNode video = detail.path("video");
-            info.setVideoWidth(video.path("width").asInt(1080));
-            info.setVideoHeight(video.path("height").asInt(1920));
+            int origWidth = video.path("width").asInt(1080);
+            int origHeight = video.path("height").asInt(1920);
+            info.setVideoWidth(origWidth);
+            info.setVideoHeight(origHeight);
             long dur = video.path("duration").asLong(0);
             info.setDuration(dur > 1000 ? dur / 1000 : dur);
 
@@ -327,25 +329,70 @@ public class DouyinApiClient {
                 info.setCover(coverList.get(0).asText(""));
             }
 
-            // 优先从 bit_rate 提取最高清无水印视频地址
-            JsonNode bitRates = video.path("bit_rate");
-            if (bitRates.isArray() && bitRates.size() > 0) {
-                JsonNode bestGear = bitRates.get(0);
-                JsonNode brUrls = bestGear.path("play_addr").path("url_list");
-                if (brUrls.isArray() && brUrls.size() > 0) {
-                    String bestUrl = brUrls.get(0).asText("");
-                    info.setVideoUrl(bestUrl.replace("playwm", "play"));
+            // 提取核心 video_id (uri)
+            String videoUri = video.path("play_addr").path("uri").asText("");
+            if (videoUri.isEmpty()) {
+                JsonNode bitRates = video.path("bit_rate");
+                if (bitRates.isArray() && bitRates.size() > 0) {
+                    videoUri = bitRates.get(0).path("play_addr").path("uri").asText("");
                 }
             }
 
-            // 若 bit_rate 未提取到，从 play_addr 提取无水印视频地址
-            if (info.getVideoUrl() == null || info.getVideoUrl().isEmpty()) {
-                JsonNode playAddr = video.path("play_addr").path("url_list");
-                if (playAddr.isArray() && playAddr.size() > 0) {
-                    String rawPlayUrl = playAddr.get(0).asText("");
-                    info.setVideoUrl(rawPlayUrl.replace("playwm", "play"));
+            List<DouyinInfo.VideoQuality> qualities = new ArrayList<>();
+
+            // 若获取到 videoUri，构建多档位画质（原画/1080P、720P高清、540P标清）
+            if (!videoUri.isEmpty()) {
+                // 1. 原画 / 1080P 超清（最高码率源文件，ratio=default）
+                String originUrl = "https://aweme.snssdk.com/aweme/v1/play/?video_id=" + videoUri + "&ratio=default";
+                long originSize = fetchContentLength(originUrl);
+                String originSizeDesc = originSize > 0 ? formatFileSize(originSize) : "";
+                String originLabel = (origWidth >= 1080 || origHeight >= 1080 ? "1080P 超清 / 原画" : "原画 / 最高清")
+                        + (originSizeDesc.isEmpty() ? "" : " (" + originSizeDesc + ")");
+                qualities.add(new DouyinInfo.VideoQuality("origin", originLabel, originUrl, origWidth, origHeight, originSize, originSizeDesc));
+
+                // 2. 720P 高清 (快速)
+                String hdUrl = "https://aweme.snssdk.com/aweme/v1/play/?video_id=" + videoUri + "&ratio=720p";
+                long hdSize = video.path("play_addr").path("data_size").asLong(0);
+                if (hdSize <= 0) hdSize = fetchContentLength(hdUrl);
+                String hdSizeDesc = hdSize > 0 ? formatFileSize(hdSize) : "";
+                int hdWidth = origWidth >= origHeight ? 1280 : 720;
+                int hdHeight = origWidth >= origHeight ? 720 : (int) Math.round((double) origHeight * 720 / Math.max(1, origWidth));
+                String hdLabel = "720P 高清 (快速)" + (hdSizeDesc.isEmpty() ? "" : " (" + hdSizeDesc + ")");
+                qualities.add(new DouyinInfo.VideoQuality("720p", hdLabel, hdUrl, hdWidth, hdHeight, hdSize, hdSizeDesc));
+
+                // 3. 540P 标清 (极速省流)
+                String sdUrl = "https://aweme.snssdk.com/aweme/v1/play/?video_id=" + videoUri + "&ratio=1080p";
+                long sdSize = fetchContentLength(sdUrl);
+                String sdSizeDesc = sdSize > 0 ? formatFileSize(sdSize) : "";
+                int sdWidth = origWidth >= origHeight ? 960 : 540;
+                int sdHeight = origWidth >= origHeight ? 540 : (int) Math.round((double) origHeight * 540 / Math.max(1, origWidth));
+                String sdLabel = "540P 标清 (省流)" + (sdSizeDesc.isEmpty() ? "" : " (" + sdSizeDesc + ")");
+                qualities.add(new DouyinInfo.VideoQuality("540p", sdLabel, sdUrl, sdWidth, sdHeight, sdSize, sdSizeDesc));
+
+                // 默认将最高清（原画）作为缺省下载链接
+                info.setVideoUrl(originUrl);
+            } else {
+                // 兜底：若未能获取 uri，按原逻辑提取
+                JsonNode bitRates = video.path("bit_rate");
+                if (bitRates.isArray() && bitRates.size() > 0) {
+                    JsonNode bestGear = bitRates.get(0);
+                    JsonNode brUrls = bestGear.path("play_addr").path("url_list");
+                    if (brUrls.isArray() && brUrls.size() > 0) {
+                        String bestUrl = brUrls.get(0).asText("").replace("playwm", "play");
+                        info.setVideoUrl(bestUrl);
+                        qualities.add(new DouyinInfo.VideoQuality("default", "默认画质", bestUrl, origWidth, origHeight, 0L, ""));
+                    }
+                }
+                if (info.getVideoUrl() == null || info.getVideoUrl().isEmpty()) {
+                    JsonNode playAddr = video.path("play_addr").path("url_list");
+                    if (playAddr.isArray() && playAddr.size() > 0) {
+                        String rawPlayUrl = playAddr.get(0).asText("").replace("playwm", "play");
+                        info.setVideoUrl(rawPlayUrl);
+                        qualities.add(new DouyinInfo.VideoQuality("default", "默认画质", rawPlayUrl, origWidth, origHeight, 0L, ""));
+                    }
                 }
             }
+            info.setQualities(qualities);
         }
 
         // 音频信息
@@ -603,5 +650,42 @@ public class DouyinApiClient {
             return dm.group(1);
         }
         return null;
+    }
+
+    /**
+     * 快速探测视频文件字节大小（HEAD 请求）
+     */
+    private long fetchContentLength(String url) {
+        if (url == null || url.isEmpty()) return 0L;
+        try {
+            org.apache.http.client.methods.HttpHead head = new org.apache.http.client.methods.HttpHead(url);
+            head.setHeader(HttpHeaders.USER_AGENT, MOBILE_UA);
+            RequestConfig fastConfig = RequestConfig.custom()
+                    .setConnectTimeout(2500)
+                    .setSocketTimeout(2500)
+                    .setConnectionRequestTimeout(2000)
+                    .build();
+            head.setConfig(fastConfig);
+            try (CloseableHttpResponse resp = httpClient.execute(head)) {
+                Header lenHeader = resp.getFirstHeader(HttpHeaders.CONTENT_LENGTH);
+                if (lenHeader != null) {
+                    return Long.parseLong(lenHeader.getValue());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("HEAD 探测视频文件大小失败 ({}): {}", url, e.getMessage());
+        }
+        return 0L;
+    }
+
+    /**
+     * 友好格式化字节大小
+     */
+    private String formatFileSize(long bytes) {
+        if (bytes <= 0) return "";
+        if (bytes < 1024 * 1024) {
+            return String.format("%.1f KB", bytes / 1024.0);
+        }
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
     }
 }

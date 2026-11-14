@@ -511,6 +511,42 @@
     flex-direction: column; gap: 12px;
   }
 
+  .douyin-quality-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .douyin-quality-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #475569;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .douyin-quality-select {
+    flex: 1;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    background: #fff;
+    cursor: pointer;
+    outline: none;
+    transition: all .2s;
+  }
+  .douyin-quality-select:focus {
+    border-color: #fe2c55;
+    box-shadow: 0 0 0 2px rgba(254, 44, 85, 0.15);
+  }
+
   .btn-douyin-dl {
     background: linear-gradient(135deg, #fe2c55 0%, #ff0050 100%);
     color: #fff; padding: 13px 22px; font-size: 15px; font-weight: 700;
@@ -692,6 +728,11 @@
         <div class="douyin-actions-wrap">
           <!-- 视频下载区域 -->
           <div id="dyVideoActions" style="display:flex; flex-direction:column; gap:12px;">
+            <div id="dyQualityBox" class="douyin-quality-box" style="display:none;">
+              <span class="douyin-quality-label">🎬 画质规格:</span>
+              <select id="dyQualitySelect" class="douyin-quality-select" onchange="onDouyinQualityChange()">
+              </select>
+            </div>
             <a id="dyVideoDlBtn" class="btn-douyin-dl" href="#" target="_blank">
               <span>📥 下载无水印视频 (1080P/原画 MP4)</span>
             </a>
@@ -1399,12 +1440,36 @@ function renderDouyinInfo(data) {
     imageActions.style.display = 'none';
     imagesGridWrap.style.display = 'none';
 
+    const qualityBox = document.getElementById('dyQualityBox');
+    const qualitySelect = document.getElementById('dyQualitySelect');
     const dlBtn = document.getElementById('dyVideoDlBtn');
-    if (data.videoUrl) {
-      dlBtn.href = `/api/douyin/download?url=${encodeURIComponent(data.videoUrl)}&title=${encodeURIComponent(data.title || 'douyin_video')}&type=video`;
-      dlBtn.style.display = 'inline-flex';
+    qualitySelect.innerHTML = '';
+
+    const qualities = (data.qualities && data.qualities.length > 0) ? data.qualities : (data.videoUrl ? [{
+      quality: 'default',
+      label: '1080P/原画 MP4',
+      url: data.videoUrl
+    }] : []);
+
+    if (qualities.length > 0) {
+      qualityBox.style.display = 'flex';
+      qualities.forEach((q, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = q.label || q.quality;
+        qualitySelect.appendChild(opt);
+      });
+      qualitySelect.selectedIndex = 0;
+      onDouyinQualityChange();
     } else {
-      dlBtn.style.display = 'none';
+      qualityBox.style.display = 'none';
+      if (data.videoUrl) {
+        dlBtn.href = `/api/douyin/download?url=${encodeURIComponent(data.videoUrl)}&title=${encodeURIComponent(data.title || 'douyin_video')}&type=video`;
+        dlBtn.style.display = 'inline-flex';
+        dlBtn.innerHTML = `<span>📥 下载无水印视频 (1080P/原画 MP4)</span>`;
+      } else {
+        dlBtn.style.display = 'none';
+      }
     }
   }
 
@@ -1417,6 +1482,29 @@ function renderDouyinInfo(data) {
   } else {
     audioBtn.style.display = 'none';
   }
+}
+
+function onDouyinQualityChange() {
+  if (!currentDouyinData) return;
+  const qualities = currentDouyinData.qualities || [];
+  const select = document.getElementById('dyQualitySelect');
+  const dlBtn = document.getElementById('dyVideoDlBtn');
+  const idx = parseInt(select.value, 10);
+  const q = qualities[idx] || (currentDouyinData.videoUrl ? { url: currentDouyinData.videoUrl, label: '1080P/原画 MP4' } : null);
+
+  if (!q) {
+    dlBtn.style.display = 'none';
+    return;
+  }
+
+  const rawUrl = q.url || currentDouyinData.videoUrl;
+  const rawTitle = currentDouyinData.title || 'douyin_video';
+  const cleanTitle = rawTitle.replace(/[\\/:*?"<>|\r\n]/g, '_').substring(0, 80);
+  const qualityTag = q.quality && q.quality !== 'default' ? `_${q.quality}` : '';
+
+  dlBtn.href = `/api/douyin/download?url=${encodeURIComponent(rawUrl)}&title=${encodeURIComponent(cleanTitle + qualityTag)}&type=video`;
+  dlBtn.style.display = 'inline-flex';
+  dlBtn.innerHTML = `<span>📥 下载无水印视频 · ${esc(q.label || 'MP4')}</span>`;
 }
 
 /* 媒体图片防盗链代理 */

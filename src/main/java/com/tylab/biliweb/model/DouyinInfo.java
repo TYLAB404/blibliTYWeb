@@ -35,8 +35,56 @@ public class DouyinInfo {
     private String musicTitle;
     /** 图集模式下的无水印高清图片列表 */
     private List<String> images = new ArrayList<>();
+    /** 可选画质规格列表（如 1080P 超清 / 原画、720P 高清、540P 标清） */
+    private List<VideoQuality> qualities = new ArrayList<>();
     /** 发布时间戳（秒） */
     private Long createTime;
+
+    /**
+     * 画质清晰度模型
+     */
+    public static class VideoQuality {
+        private String quality;
+        private String label;
+        private String url;
+        private Integer width;
+        private Integer height;
+        private Long dataSize;
+        private String sizeDesc;
+
+        public VideoQuality() {}
+
+        public VideoQuality(String quality, String label, String url, Integer width, Integer height, Long dataSize, String sizeDesc) {
+            this.quality = quality;
+            this.label = label;
+            this.url = url;
+            this.width = width;
+            this.height = height;
+            this.dataSize = dataSize;
+            this.sizeDesc = sizeDesc;
+        }
+
+        public String getQuality() { return quality; }
+        public void setQuality(String quality) { this.quality = quality; }
+
+        public String getLabel() { return label; }
+        public void setLabel(String label) { this.label = label; }
+
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+
+        public Integer getWidth() { return width; }
+        public void setWidth(Integer width) { this.width = width; }
+
+        public Integer getHeight() { return height; }
+        public void setHeight(Integer height) { this.height = height; }
+
+        public Long getDataSize() { return dataSize; }
+        public void setDataSize(Long dataSize) { this.dataSize = dataSize; }
+
+        public String getSizeDesc() { return sizeDesc; }
+        public void setSizeDesc(String sizeDesc) { this.sizeDesc = sizeDesc; }
+    }
 
     public String getPlatform() {
         return platform;
@@ -148,6 +196,14 @@ public class DouyinInfo {
 
     public void setImages(List<String> images) {
         this.images = images;
+    }
+
+    public List<VideoQuality> getQualities() {
+        return qualities;
+    }
+
+    public void setQualities(List<VideoQuality> qualities) {
+        this.qualities = qualities;
     }
 
     public Long getCreateTime() {
